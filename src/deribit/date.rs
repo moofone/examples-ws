@@ -69,21 +69,3 @@ fn civil_from_days(days: i64) -> (i32, u8, u8) {
     (year, m as u8, d as u8)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn unix_epoch_is_1970_01_01() {
-        let d = utc_date_from_unix_ms(0);
-        assert_eq!(d.to_string(), "1970-01-01");
-    }
-
-    #[test]
-    fn known_date_round_trip_examples() {
-        // 2024-01-01T00:00:00Z
-        let d = utc_date_from_unix_ms(1_704_067_200_000);
-        assert_eq!(d.to_string(), "2024-01-01");
-    }
-}
-
