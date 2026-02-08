@@ -1,0 +1,13 @@
+[package]
+name = "examples-ws"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+shared-ws = { git = "https://github.com/moofone/shared-ws.git", branch = "move-examples-to-examples-ws" }
+bytes = "1.6"
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
+kameo = { git = "https://github.com/moofone/kameo", features = ["remote"] }
+sonic-rs = { version = "0.5.6", features = ["arbitrary_precision"] }
+thiserror = "1"
+tokio = { version = "1", features = ["sync", "time", "net", "rt", "rt-multi-thread", "macros"] }
