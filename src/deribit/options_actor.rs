@@ -26,7 +26,7 @@ use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::{
     ForwardAllIngress, WebSocketBufferConfig, WsConnectionStats, WsConnectionStatus,
     WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction, WsParseOutcome,
-    WsSubscriptionAction, WsTlsConfig,
+    WsSubscriptionAction,
 };
 use shared_ws::ws::{
     GetConnectionStats, GetConnectionStatus, ProtocolPingPong, WebSocketActor, WebSocketActorArgs,
@@ -169,7 +169,7 @@ impl WsEndpointHandler for ForwardingHandler {
 #[derive(Clone)]
 pub struct DeribitOptionsActorArgs {
     pub url: String,
-    pub tls: WsTlsConfig,
+    pub transport: TungsteniteTransport,
     pub ticker_interval: String,
     pub stale_threshold: Duration,
     pub enable_ping: bool,
@@ -190,7 +190,7 @@ impl DeribitOptionsActorArgs {
     ) -> Self {
         Self {
             url,
-            tls: WsTlsConfig::default(),
+            transport: TungsteniteTransport::default(),
             ticker_interval: "raw".to_string(),
             stale_threshold: Duration::from_secs(30),
             enable_ping: false,
@@ -237,8 +237,7 @@ impl DeribitOptionsActor {
         let ping = ProtocolPingPong::new(args.ping_interval, args.ping_timeout);
         let ws = WebSocketActor::spawn(WebSocketActorArgs {
             url: args.url.clone(),
-            tls: args.tls,
-            transport: TungsteniteTransport::default(),
+            transport: args.transport.clone(),
             reconnect_strategy: args.reconnect.clone(),
             handler,
             ingress: ForwardAllIngress::default(),

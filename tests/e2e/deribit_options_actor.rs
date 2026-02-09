@@ -7,7 +7,7 @@ use examples_ws::deribit::options_actor::{
 };
 use futures_util::future::BoxFuture;
 use kameo::Actor;
-use shared_ws::ws::WsTlsConfig;
+use shared_ws::transport::tungstenite::TungsteniteTransport;
 
 use crate::support::ws_mock::{WsMockFrameKind, WsMockServer};
 
@@ -60,9 +60,7 @@ async fn options_actor_subscribe_currencies_emits_expected_channels() {
     let provider: Arc<dyn DeribitInstrumentsProvider> = Arc::new(MockInstruments);
     let args = DeribitOptionsActorArgs {
         url: format!("ws://{addr}"),
-        tls: WsTlsConfig {
-            validate_certs: false,
-        },
+        transport: TungsteniteTransport::default(),
         ticker_interval: "raw".to_string(),
         stale_threshold: Duration::from_secs(30),
         enable_ping: false,

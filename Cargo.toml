@@ -8,7 +8,9 @@ shared-ws = { git = "https://github.com/moofone/shared-ws" }
 shared-rate_limiter = { git = "https://github.com/moofone/shared-rate_limiter" }
 bytes = "1.6"
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
-kameo = { git = "https://github.com/moofone/kameo", features = ["remote"] }
+# Pin to the same rev as `shared-ws` to avoid duplicate kameo sources in Cargo.lock
+# (which breaks trait coherence when types cross the crate boundary).
+kameo = { git = "https://github.com/moofone/kameo", rev = "ee74f3e4e21efe4f456e6eeb1f7e68cb24322186", features = ["remote"] }
 lexical-core = "0.8"
 memchr = "2"
 serde = { version = "1", features = ["derive"] }

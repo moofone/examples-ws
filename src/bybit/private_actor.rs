@@ -22,7 +22,7 @@ use crate::endpoints::bybit::{
 use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::{
     ExponentialBackoffReconnect, ForwardAllIngress, WebSocketBufferConfig, WsConnectionStats,
-    WsConnectionStatus, WsTlsConfig,
+    WsConnectionStatus,
 };
 use shared_ws::ws::{
     GetConnectionStats, GetConnectionStatus, WebSocketActor, WebSocketActorArgs, WebSocketEvent,
@@ -160,7 +160,7 @@ impl shared_ws::ws::WsEndpointHandler for ForwardingHandler {
 #[derive(Clone)]
 pub struct BybitPrivateActorArgs {
     pub url: String,
-    pub tls: WsTlsConfig,
+    pub transport: TungsteniteTransport,
     pub initial_topics: Vec<String>,
     pub stale_threshold: Duration,
     pub ws_buffers: WebSocketBufferConfig,
@@ -178,7 +178,7 @@ impl BybitPrivateActorArgs {
     pub fn test_defaults(url: String) -> Self {
         Self {
             url,
-            tls: WsTlsConfig::default(),
+            transport: TungsteniteTransport::default(),
             initial_topics: vec!["order".to_string(), "execution".to_string()],
             stale_threshold: Duration::from_secs(30),
             ws_buffers: WebSocketBufferConfig::default(),
@@ -332,8 +332,7 @@ impl Actor for BybitPrivateActor {
         let reconnect = this.args.reconnect.clone();
         let ws = WebSocketActor::spawn(WebSocketActorArgs {
             url: this.args.url.clone(),
-            tls: this.args.tls,
-            transport: TungsteniteTransport::default(),
+            transport: this.args.transport.clone(),
             reconnect_strategy: reconnect,
             handler,
             ingress: ForwardAllIngress::default(),

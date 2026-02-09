@@ -9,7 +9,7 @@ use kameo::Actor;
 use shared_ws::ws::{
     ProtocolPingPong, WebSocketActor, WebSocketActorArgs, WebSocketBufferConfig, WebSocketEvent,
     WsConfirmMode, WsDelegatedRequest, WsDisconnectAction, WsDisconnectCause, WsEndpointHandler,
-    WsErrorAction, WsParseOutcome, WsReconnectStrategy, WsRequestMatch, WsTlsConfig,
+    WsErrorAction, WsParseOutcome, WsReconnectStrategy, WsRequestMatch,
     into_ws_message,
 };
 use tokio::sync::mpsc;
@@ -130,7 +130,6 @@ async fn deribit_wss_subscribe_then_place_order_confirmed() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url: server.url(),
-        tls: WsTlsConfig::default(),
         transport: server.client_transport(),
         reconnect_strategy: FastReconnect,
         handler,

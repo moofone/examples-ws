@@ -11,7 +11,7 @@ use shared_ws::ws::{
     WsEndpointHandler, WsErrorAction, WsParseOutcome,
 };
 use shared_ws::ws::{
-    WebSocketActor, WebSocketActorArgs, WebSocketEvent, WsReconnectStrategy, WsTlsConfig,
+    WebSocketActor, WebSocketActorArgs, WebSocketEvent, WsReconnectStrategy,
 };
 
 use examples_ws::bybit::ping::BybitJsonPingPong;
@@ -252,7 +252,6 @@ async fn main() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url,
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: ExponentialReconnect::new(
             Duration::from_secs(1),

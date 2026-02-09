@@ -9,7 +9,7 @@ use shared_ws::client::accept_async;
 use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::{
     WebSocketActor, WebSocketActorArgs, WebSocketBufferConfig, WebSocketEvent, WsMessage,
-    WsReconnectStrategy, WsTlsConfig,
+    WsReconnectStrategy,
 };
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -84,7 +84,6 @@ async fn bybit_auth_is_sent_before_initial_subscribe() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url: format!("ws://{}", addr),
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: FastReconnect,
         handler,

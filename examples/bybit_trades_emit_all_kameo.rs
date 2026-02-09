@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde::de::{self, Deserializer, Visitor};
 
 use shared_ws::transport::tungstenite::TungsteniteTransport;
-use shared_ws::ws::{WebSocketActor, WebSocketActorArgs, WebSocketEvent, WsTlsConfig};
+use shared_ws::ws::{WebSocketActor, WebSocketActorArgs, WebSocketEvent};
 use shared_ws::ws::{
     WebSocketBufferConfig, WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction,
     WsFrame, WsIngress, WsIngressAction, WsMessageAction, WsParseOutcome,
@@ -308,7 +308,6 @@ async fn main() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url,
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: shared_ws::ws::ExponentialBackoffReconnect::default(),
         handler,

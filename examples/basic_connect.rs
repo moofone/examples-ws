@@ -6,7 +6,7 @@ use shared_ws::ws::{
     GetConnectionStats, ProtocolPingPong, WebSocketActor, WebSocketActorArgs,
     WebSocketBufferConfig, WebSocketEvent, WsDisconnectAction, WsDisconnectCause,
     WsEndpointHandler, WsErrorAction, WsMessageAction, WsParseOutcome, WsReconnectStrategy,
-    WsSubscriptionAction, WsSubscriptionManager, WsSubscriptionStatus, WsTlsConfig,
+    WsSubscriptionAction, WsSubscriptionManager, WsSubscriptionStatus,
 };
 
 #[derive(Clone, Debug)]
@@ -95,7 +95,6 @@ async fn main() {
     let url = std::env::var("WS_URL").unwrap_or_else(|_| "wss://example.invalid".to_string());
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url,
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: NoopReconnect,
         handler: NoopHandler {

@@ -776,7 +776,7 @@ dependencies = [
 [[package]]
 name = "kameo"
 version = "0.19.2"
-source = "git+https://github.com/moofone/kameo#ee74f3e4e21efe4f456e6eeb1f7e68cb24322186"
+source = "git+https://github.com/moofone/kameo?rev=ee74f3e4e21efe4f456e6eeb1f7e68cb24322186#ee74f3e4e21efe4f456e6eeb1f7e68cb24322186"
 dependencies = [
  "bitflags",
  "blake3",
@@ -798,7 +798,7 @@ dependencies = [
 [[package]]
 name = "kameo_macros"
 version = "0.19.0"
-source = "git+https://github.com/moofone/kameo#ee74f3e4e21efe4f456e6eeb1f7e68cb24322186"
+source = "git+https://github.com/moofone/kameo?rev=ee74f3e4e21efe4f456e6eeb1f7e68cb24322186#ee74f3e4e21efe4f456e6eeb1f7e68cb24322186"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -842,7 +842,7 @@ dependencies = [
 [[package]]
 name = "kameo_type_hash_macros"
 version = "0.1.0"
-source = "git+https://github.com/moofone/kameo#ee74f3e4e21efe4f456e6eeb1f7e68cb24322186"
+source = "git+https://github.com/moofone/kameo?rev=ee74f3e4e21efe4f456e6eeb1f7e68cb24322186#ee74f3e4e21efe4f456e6eeb1f7e68cb24322186"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1535,12 +1535,12 @@ dependencies = [
 [[package]]
 name = "shared-rate_limiter"
 version = "0.1.0"
-source = "git+https://github.com/moofone/shared-rate_limiter#28e81fbe45d31574ef113cab4c9dd2b1344d1150"
+source = "git+https://github.com/moofone/shared-rate_limiter#a58a8a3f93d788c0ecb34ff68b723dd85bc542b2"
 
 [[package]]
 name = "shared-ws"
 version = "0.1.0"
-source = "git+https://github.com/moofone/shared-ws#c57d1c8c4b07122ae329b638ace1e15b5ed0593c"
+source = "git+https://github.com/moofone/shared-ws#47128c001e0086f7f304b4216c61293d7bb53eb8"
 dependencies = [
  "anyhow",
  "bytes",

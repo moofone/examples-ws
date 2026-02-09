@@ -23,7 +23,7 @@ use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::{
     ForwardAllIngress, WebSocketBufferConfig, WsConnectionStats, WsConnectionStatus,
     WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction, WsParseOutcome,
-    WsSubscriptionAction, WsTlsConfig,
+    WsSubscriptionAction,
 };
 use shared_ws::ws::{
     GetConnectionStats, GetConnectionStatus, ProtocolPingPong, WebSocketActor, WebSocketActorArgs,
@@ -193,7 +193,7 @@ impl WsEndpointHandler for ForwardingHandler {
 #[derive(Clone)]
 pub struct DeribitPublicActorArgs {
     pub url: String,
-    pub tls: WsTlsConfig,
+    pub transport: TungsteniteTransport,
     pub currencies: Vec<String>,
     pub ticker_interval: String,
     pub stale_threshold: Duration,
@@ -213,7 +213,7 @@ impl DeribitPublicActorArgs {
     pub fn test_defaults(url: String) -> Self {
         Self {
             url,
-            tls: WsTlsConfig::default(),
+            transport: TungsteniteTransport::default(),
             currencies: vec!["BTC".to_string(), "ETH".to_string()],
             ticker_interval: "raw".to_string(),
             stale_threshold: Duration::from_secs(30),
@@ -446,8 +446,7 @@ impl Actor for DeribitPublicActor {
         let ping = ProtocolPingPong::new(this.args.ping_interval, this.args.ping_timeout);
         let ws = WebSocketActor::spawn(WebSocketActorArgs {
             url: this.args.url.clone(),
-            tls: this.args.tls,
-            transport: TungsteniteTransport::default(),
+            transport: this.args.transport.clone(),
             reconnect_strategy: this.args.reconnect.clone(),
             handler,
             ingress: ForwardAllIngress::default(),

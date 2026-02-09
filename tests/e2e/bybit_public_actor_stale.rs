@@ -5,8 +5,9 @@ use bytes::Bytes;
 use examples_ws::bybit::public_actor::{BybitPublicActor, BybitPublicActorArgs, GetStats};
 use kameo::Actor;
 use shared_ws::client::accept_async;
+use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::ExponentialBackoffReconnect;
-use shared_ws::ws::{WsMessage, WsTlsConfig};
+use shared_ws::ws::WsMessage;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
@@ -72,7 +73,7 @@ async fn bybit_public_actor_reconnects_when_stale_threshold_exceeded() {
     // not by ping/pong aging.
     let args = BybitPublicActorArgs {
         url: format!("ws://{addr}"),
-        tls: WsTlsConfig::default(),
+        transport: TungsteniteTransport::default(),
         initial_topics: vec!["publicTrade.BTCUSDT".to_string()],
         stale_threshold: Duration::from_millis(250),
         ws_buffers: shared_ws::ws::WebSocketBufferConfig::default(),

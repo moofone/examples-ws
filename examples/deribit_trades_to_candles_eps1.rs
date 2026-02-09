@@ -16,7 +16,7 @@ use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::{ProtocolPingPong, WebSocketActor, WebSocketActorArgs, WebSocketEvent};
 use shared_ws::ws::{
     WebSocketBufferConfig, WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction,
-    WsFrame, WsIngress, WsIngressAction, WsMessageAction, WsParseOutcome, WsTlsConfig,
+    WsFrame, WsIngress, WsIngressAction, WsMessageAction, WsParseOutcome,
 };
 
 use examples_ws::candles::{CandleAggregator, CandleEmitReason, CandleUpdate, Trade, Updates};
@@ -346,7 +346,6 @@ async fn main() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url,
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: DeribitReconnect::default(),
         handler,

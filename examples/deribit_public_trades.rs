@@ -11,7 +11,7 @@ use shared_ws::ws::{
     WsEndpointHandler, WsErrorAction, WsParseOutcome,
 };
 use shared_ws::ws::{
-    ProtocolPingPong, WebSocketActor, WebSocketActorArgs, WebSocketEvent, WsTlsConfig,
+    ProtocolPingPong, WebSocketActor, WebSocketActorArgs, WebSocketEvent,
 };
 
 use examples_ws::deribit::reconnect::DeribitReconnect;
@@ -217,7 +217,6 @@ async fn main() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url,
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: DeribitReconnect::default(),
         handler,

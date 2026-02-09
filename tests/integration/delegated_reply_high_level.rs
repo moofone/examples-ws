@@ -11,7 +11,7 @@ use shared_ws::ws::{
     WebSocketBufferConfig, WebSocketEvent, WsConfirmMode, WsDelegatedError, WsDelegatedOk,
     WsDelegatedRequest, WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction,
     WsFrame, WsMessageAction, WsParseOutcome, WsReconnectStrategy, WsRequestMatch,
-    WsSubscriptionAction, WsSubscriptionManager, WsSubscriptionStatus, WsTlsConfig,
+    WsSubscriptionAction, WsSubscriptionManager, WsSubscriptionStatus,
     into_ws_message,
 };
 use sonic_rs::JsonValueTrait;
@@ -262,7 +262,6 @@ async fn delegated_confirmed_happy_path_waits_for_confirmation() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url: format!("ws://{}", addr),
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: NoReconnect,
         handler: JsonRpcMatcherHandler::new(),
@@ -329,7 +328,6 @@ async fn delegated_endpoint_rejected_is_surfaced() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url: format!("ws://{}", addr),
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: NoReconnect,
         handler: JsonRpcMatcherHandler::new(),
@@ -382,7 +380,6 @@ async fn delegated_unconfirmed_when_server_accepts_but_never_replies() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url: format!("ws://{}", addr),
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: NoReconnect,
         handler: JsonRpcMatcherHandler::new(),
@@ -440,7 +437,6 @@ async fn delegated_unconfirmed_when_server_accepts_but_never_replies() {
 async fn delegated_not_delivered_when_writer_not_ready() {
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url: "ws://127.0.0.1:0".to_string(),
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: NoReconnect,
         handler: JsonRpcMatcherHandler::new(),
@@ -488,7 +484,6 @@ async fn delegated_payload_mismatch_is_rejected_while_original_request_still_com
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url: format!("ws://{}", addr),
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: NoReconnect,
         handler: JsonRpcMatcherHandler::new(),
@@ -573,7 +568,6 @@ async fn delegated_too_many_pending_is_surfaced() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url: format!("ws://{}", addr),
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: NoReconnect,
         handler: JsonRpcMatcherHandler::new(),

@@ -11,7 +11,7 @@ use kameo::Actor;
 use shared_ws::ws::{
     ProtocolPingPong, WebSocketActor, WebSocketActorArgs, WebSocketBufferConfig, WebSocketEvent,
     WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction, WsParseOutcome,
-    WsReconnectStrategy, WsTlsConfig,
+    WsReconnectStrategy,
 };
 use tokio::sync::mpsc;
 use tracing::debug;
@@ -117,7 +117,6 @@ async fn deribit_wss_connects_subscribes_and_receives_stream_data() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url: server.url(),
-        tls: WsTlsConfig::default(),
         transport: server.client_transport(),
         reconnect_strategy: FastReconnect,
         handler,

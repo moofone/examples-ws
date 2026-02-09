@@ -11,7 +11,7 @@ use shared_ws::ws::{
     WebSocketBufferConfig, WebSocketEvent, WsConfirmMode, WsConnectionStatus, WsDelegatedError,
     WsDelegatedRequest, WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction,
     WsFrame, WsMessageAction, WsParseOutcome, WsRateLimitFeedback, WsReconnectStrategy,
-    WsRequestMatch, WsSubscriptionAction, WsSubscriptionManager, WsSubscriptionStatus, WsTlsConfig,
+    WsRequestMatch, WsSubscriptionAction, WsSubscriptionManager, WsSubscriptionStatus,
     into_ws_message,
 };
 use sonic_rs::JsonValueTrait;
@@ -356,7 +356,6 @@ async fn ws_429_endpoint_rejection_can_be_applied_to_shared_rate_limiter_via_act
     // Websocket actor: delegated requests w/ an endpoint handler that surfaces 429 as feedback.
     let ws = WebSocketActor::spawn(WebSocketActorArgs {
         url: format!("ws://{addr}"),
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: NoReconnect,
         handler: DeribitRateLimitMatcher::default(),
