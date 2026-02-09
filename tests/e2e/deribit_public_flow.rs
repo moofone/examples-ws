@@ -1,25 +1,24 @@
-use std::net::SocketAddr;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
 use std::time::Duration;
 
-use bytes::Bytes;
 use examples_ws::endpoints::deribit::{
     DeribitChannel, DeribitEvent, DeribitPublicHandler, DeribitSubOp, DeribitSubscriptionManager,
     DeribitSubscriptionRequest,
 };
 use kameo::Actor;
-use shared_ws::client::accept_async;
 use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::{
     ProtocolPingPong, WebSocketActor, WebSocketActorArgs, WebSocketBufferConfig, WebSocketEvent,
-    WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction, WsMessage,
-    WsParseOutcome, WsReconnectStrategy, WsSubscriptionAction, WsTlsConfig,
+    WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction, WsParseOutcome,
+    WsReconnectStrategy, WsSubscriptionAction, WsTlsConfig,
 };
-use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+
+use crate::support::deribit_messages;
+use crate::support::ws_mock::{WsMockFrameKind, WsMockServer};
 
 #[derive(Clone)]
 struct FastReconnect;
@@ -34,50 +33,8 @@ impl WsReconnectStrategy for FastReconnect {
     }
 }
 
-#[derive(Debug)]
-enum ServerEvent {
-    Connected { conn_id: usize },
-    Data { conn_id: usize, bytes: Bytes },
-}
-
-async fn spawn_deribit_server() -> (SocketAddr, mpsc::UnboundedReceiver<ServerEvent>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let (tx, rx) = mpsc::unbounded_channel();
-
-    tokio::spawn(async move {
-        let mut conn_id = 0usize;
-        loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                break;
-            };
-            conn_id = conn_id.saturating_add(1);
-            let tx = tx.clone();
-            tokio::spawn(async move {
-                let mut ws = accept_async(stream).await.unwrap();
-                let _ = tx.send(ServerEvent::Connected { conn_id });
-
-                while let Some(msg) = ws.next().await {
-                    match msg {
-                        Ok(WsMessage::Text(text)) => {
-                            let _ = tx.send(ServerEvent::Data {
-                                conn_id,
-                                bytes: text.into_bytes(),
-                            });
-                        }
-                        Ok(WsMessage::Binary(bytes)) => {
-                            let _ = tx.send(ServerEvent::Data { conn_id, bytes });
-                        }
-                        Ok(WsMessage::Close(_)) => break,
-                        Err(_) => break,
-                        _ => {}
-                    }
-                }
-            });
-        }
-    });
-
-    (addr, rx)
+async fn spawn_deribit_server() -> WsMockServer {
+    WsMockServer::spawn().await
 }
 
 #[derive(Clone)]
@@ -151,7 +108,8 @@ impl WsEndpointHandler for CapturingHandler {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn deribit_sends_subscribe_on_connect_and_parses_subscription_notification() {
-    let (addr, mut server_rx) = spawn_deribit_server().await;
+    let mut server = spawn_deribit_server().await;
+    let addr = server.addr;
 
     let subs = DeribitSubscriptionManager::with_initial_channels([DeribitChannel::from(
         "ticker.BTC-PERPETUAL.raw",
@@ -182,31 +140,27 @@ async fn deribit_sends_subscribe_on_connect_and_parses_subscription_notification
     actor.tell(WebSocketEvent::Connect).send().await.unwrap();
 
     // First server message should be the subscribe request emitted during connect.
-    let conn_id = loop {
-        match tokio::time::timeout(Duration::from_secs(2), server_rx.recv()).await {
-            Ok(Some(ServerEvent::Connected { conn_id })) => break conn_id,
-            Ok(Some(_)) => {}
-            Ok(None) => panic!("server event stream ended"),
-            Err(_) => panic!("timed out waiting for server connect"),
-        }
-    };
+    let conn_id = server.wait_connected(Duration::from_secs(2)).await;
+    let subscribe = server
+        .wait_frame(Duration::from_secs(2), Some(conn_id))
+        .await;
+    assert!(
+        matches!(
+            subscribe.kind,
+            WsMockFrameKind::Text | WsMockFrameKind::Binary
+        ),
+        "unexpected subscribe frame kind: {:?}",
+        subscribe.kind
+    );
 
-    let subscribe = loop {
-        match tokio::time::timeout(Duration::from_secs(2), server_rx.recv()).await {
-            Ok(Some(ServerEvent::Data { conn_id: c, bytes })) if c == conn_id => break bytes,
-            Ok(Some(_)) => {}
-            Ok(None) => panic!("server event stream ended"),
-            Err(_) => panic!("timed out waiting for subscribe payload"),
-        }
-    };
-
-    let subscribe_str = std::str::from_utf8(subscribe.as_ref()).unwrap();
+    let subscribe_str = std::str::from_utf8(subscribe.bytes.as_ref()).unwrap();
     assert!(subscribe_str.contains("\"method\":\"public/subscribe\""));
     assert!(subscribe_str.contains("ticker.BTC-PERPETUAL.raw"));
 
     // Inject a Deribit subscription notification.
-    let notif = Bytes::from_static(
-        br#"{"jsonrpc":"2.0","method":"subscription","params":{"channel":"ticker.BTC-PERPETUAL.raw","data":{"timestamp":1700000000000}}}"#,
+    let notif = deribit_messages::subscription_notification(
+        "ticker.BTC-PERPETUAL.raw",
+        deribit_messages::ticker_data_example_json(),
     );
     actor
         .ask(WebSocketEvent::Inbound(shared_ws::ws::into_ws_message(
@@ -229,8 +183,74 @@ async fn deribit_sends_subscribe_on_connect_and_parses_subscription_notification
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deribit_parses_platform_state_subscription_notification() {
+    let mut server = spawn_deribit_server().await;
+    let addr = server.addr;
+
+    let subs =
+        DeribitSubscriptionManager::with_initial_channels([DeribitChannel::from("platform_state")]);
+    let handler = DeribitPublicHandler::new(subs);
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let handler = CapturingHandler::new(handler, event_tx);
+
+    let actor = WebSocketActor::spawn(WebSocketActorArgs {
+        url: format!("ws://{}", addr),
+        tls: WsTlsConfig::default(),
+        transport: TungsteniteTransport::default(),
+        reconnect_strategy: FastReconnect,
+        handler,
+        ingress: shared_ws::ws::ForwardAllIngress::default(),
+        ping_strategy: ProtocolPingPong::new(Duration::from_secs(60), Duration::from_secs(60)),
+        enable_ping: false,
+        stale_threshold: Duration::from_secs(30),
+        ws_buffers: WebSocketBufferConfig::default(),
+        outbound_capacity: 32,
+        circuit_breaker: None,
+        latency_policy: None,
+        payload_latency_sampling: None,
+        registration: None,
+        metrics: None,
+    });
+
+    actor.tell(WebSocketEvent::Connect).send().await.unwrap();
+
+    // Ensure server observed connect + the initial subscribe request.
+    let conn_id = server.wait_connected(Duration::from_secs(2)).await;
+    let subscribe = server
+        .wait_frame(Duration::from_secs(2), Some(conn_id))
+        .await;
+    let subscribe_str = std::str::from_utf8(subscribe.bytes.as_ref()).unwrap();
+    assert!(subscribe_str.contains("\"method\":\"public/subscribe\""));
+    assert!(subscribe_str.contains("platform_state"));
+
+    let notif = deribit_messages::subscription_notification(
+        "platform_state",
+        deribit_messages::platform_state_data_example_json(),
+    );
+    actor
+        .ask(WebSocketEvent::Inbound(shared_ws::ws::into_ws_message(
+            notif.clone(),
+        )))
+        .await
+        .unwrap();
+
+    let evt = tokio::time::timeout(Duration::from_secs(2), event_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    match evt {
+        DeribitEvent::Subscription { channel, payload } => {
+            assert_eq!(channel.0, "platform_state");
+            assert_eq!(payload, notif);
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn deribit_dynamic_subscription_update_emits_subscribe_request() {
-    let (addr, mut server_rx) = spawn_deribit_server().await;
+    let mut server = spawn_deribit_server().await;
+    let addr = server.addr;
 
     let subs = DeribitSubscriptionManager::new();
     let handler = DeribitPublicHandler::new(subs);
@@ -258,14 +278,7 @@ async fn deribit_dynamic_subscription_update_emits_subscribe_request() {
 
     actor.tell(WebSocketEvent::Connect).send().await.unwrap();
 
-    let conn_id = loop {
-        match tokio::time::timeout(Duration::from_secs(2), server_rx.recv()).await {
-            Ok(Some(ServerEvent::Connected { conn_id })) => break conn_id,
-            Ok(Some(_)) => {}
-            Ok(None) => panic!("server event stream ended"),
-            Err(_) => panic!("timed out waiting for server connect"),
-        }
-    };
+    let conn_id = server.wait_connected(Duration::from_secs(2)).await;
 
     // Dynamically subscribe.
     actor
@@ -279,14 +292,10 @@ async fn deribit_dynamic_subscription_update_emits_subscribe_request() {
         .await
         .unwrap();
 
-    let subscribe = loop {
-        match tokio::time::timeout(Duration::from_secs(2), server_rx.recv()).await {
-            Ok(Some(ServerEvent::Data { conn_id: c, bytes })) if c == conn_id => break bytes,
-            Ok(Some(_)) => {}
-            Ok(None) => panic!("server event stream ended"),
-            Err(_) => panic!("timed out waiting for subscribe payload"),
-        }
-    };
+    let subscribe = server
+        .wait_frame(Duration::from_secs(2), Some(conn_id))
+        .await
+        .bytes;
 
     let subscribe_str = std::str::from_utf8(subscribe.as_ref()).unwrap();
     assert!(subscribe_str.contains("\"method\":\"public/subscribe\""));

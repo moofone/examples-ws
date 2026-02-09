@@ -17,3 +17,9 @@ thiserror = "1"
 tokio = { version = "1", features = ["sync", "time", "net", "rt", "rt-multi-thread", "macros"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+rcgen = "0.13"
+rustls = { version = "0.23", default-features = false, features = ["std", "ring"] }
+tokio-rustls = "0.26"
+tokio-tungstenite = { version = "0.28.0", features = ["rustls-tls-webpki-roots", "connect"] }
