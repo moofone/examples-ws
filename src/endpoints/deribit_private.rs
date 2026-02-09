@@ -63,8 +63,10 @@ impl DeribitJsonRpcMatcher {
 
 fn parse_jsonrpc_id(data: &[u8]) -> Option<u64> {
     let v = sonic_rs::get(data, &["id"]).ok()?;
-    v.as_u64()
-        .or_else(|| v.as_i64().and_then(|i| if i >= 0 { Some(i as u64) } else { None }))
+    v.as_u64().or_else(|| {
+        v.as_i64()
+            .and_then(|i| if i >= 0 { Some(i as u64) } else { None })
+    })
 }
 
 impl WsEndpointHandler for DeribitJsonRpcMatcher {
@@ -84,7 +86,10 @@ impl WsEndpointHandler for DeribitJsonRpcMatcher {
         Ok(WsParseOutcome::Message(WsMessageAction::Continue))
     }
 
-    fn parse_frame(&mut self, _frame: &WsFrame) -> Result<WsParseOutcome<Self::Message>, Self::Error> {
+    fn parse_frame(
+        &mut self,
+        _frame: &WsFrame,
+    ) -> Result<WsParseOutcome<Self::Message>, Self::Error> {
         Ok(WsParseOutcome::Message(WsMessageAction::Continue))
     }
 

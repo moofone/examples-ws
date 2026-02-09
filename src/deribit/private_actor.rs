@@ -14,8 +14,8 @@ use shared_rate_limiter::{Config, Cost, Outcome, RateLimiter, Scope};
 use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::{
     ForwardAllIngress, GetConnectionStatus, ProtocolPingPong, WebSocketActor, WebSocketActorArgs,
-    WebSocketBufferConfig, WebSocketEvent, WsConfirmMode, WsDelegatedError, WsDelegatedRequest,
-    WsConnectionStatus, WsTlsConfig, into_ws_message,
+    WebSocketBufferConfig, WebSocketEvent, WsConfirmMode, WsConnectionStatus, WsDelegatedError,
+    WsDelegatedRequest, WsTlsConfig, into_ws_message,
 };
 
 use crate::endpoints::deribit_private::DeribitJsonRpcMatcher;
@@ -193,7 +193,12 @@ impl DeribitPrivateActor {
         }
     }
 
-    async fn send_jsonrpc_confirmed(&mut self, request_id: u64, payload: Vec<u8>, cost: u32) -> Result<(), String> {
+    async fn send_jsonrpc_confirmed(
+        &mut self,
+        request_id: u64,
+        payload: Vec<u8>,
+        cost: u32,
+    ) -> Result<(), String> {
         let Some(cost) = Cost::new(cost) else {
             return Err("invalid rate limiter cost (must be > 0)".to_string());
         };
@@ -334,6 +339,8 @@ impl KameoMessage<CreateOpenOrder> for DeribitPrivateActor {
         self.send_jsonrpc_confirmed(order_id, payload, self.args.order_cost)
             .await?;
 
-        Ok(CreateOpenOrderResponse { request_id: order_id })
+        Ok(CreateOpenOrderResponse {
+            request_id: order_id,
+        })
     }
 }

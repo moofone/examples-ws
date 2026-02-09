@@ -11,7 +11,8 @@ use shared_ws::ws::{
     WebSocketBufferConfig, WebSocketEvent, WsConfirmMode, WsDelegatedError, WsDelegatedOk,
     WsDelegatedRequest, WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction,
     WsFrame, WsMessageAction, WsParseOutcome, WsReconnectStrategy, WsRequestMatch,
-    WsSubscriptionAction, WsSubscriptionManager, WsSubscriptionStatus, WsTlsConfig, into_ws_message,
+    WsSubscriptionAction, WsSubscriptionManager, WsSubscriptionStatus, WsTlsConfig,
+    into_ws_message,
 };
 use sonic_rs::JsonValueTrait;
 use tokio::net::TcpListener;
@@ -71,8 +72,10 @@ impl JsonRpcMatcherHandler {
 
 fn parse_jsonrpc_id(data: &[u8]) -> Option<u64> {
     let v = sonic_rs::get(data, &["id"]).ok()?;
-    v.as_u64()
-        .or_else(|| v.as_i64().and_then(|i| if i >= 0 { Some(i as u64) } else { None }))
+    v.as_u64().or_else(|| {
+        v.as_i64()
+            .and_then(|i| if i >= 0 { Some(i as u64) } else { None })
+    })
 }
 
 impl WsEndpointHandler for JsonRpcMatcherHandler {
