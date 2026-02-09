@@ -2,7 +2,9 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use bytes::Bytes;
-use examples_ws::deribit::private_actor::{CreateOpenOrder, DeribitPrivateActor, DeribitPrivateActorArgs};
+use examples_ws::deribit::private_actor::{
+    CreateOpenOrder, DeribitPrivateActor, DeribitPrivateActorArgs,
+};
 use kameo::Actor;
 use shared_ws::client::accept_async;
 use shared_ws::ws::{WsMessage, into_ws_message};

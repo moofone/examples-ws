@@ -1,5 +1,5 @@
 # examples-ws
 
-Concrete exchange adapters and runnable examples built on top of [`shared-ws`](https://github.com/moofone/shared-ws).
+High-level (actor) end-to-end examples using `shared-rate_limiter`, `examples-ws`, and `shared-ws`.
 
 This repo intentionally hosts exchange/protocol specifics (Bybit, Deribit).
