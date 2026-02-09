@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use shared_ws::core::WsReconnectStrategy;
+use shared_ws::ws::WsReconnectStrategy;
 
 /// Deribit-style reconnect policy:
 /// - exponential backoff up to a cap,
@@ -88,7 +88,8 @@ impl WsReconnectStrategy for DeribitReconnect {
         }
 
         // Within a cooldown cycle, allow some attempts; if they fail, go back to cooldown.
-        if self.max_attempts == 0 && self.cooldown_attempts_before_reset > 0
+        if self.max_attempts == 0
+            && self.cooldown_attempts_before_reset > 0
             && self.attempt_in_cycle > self.cooldown_attempts_before_reset
         {
             self.cooldown_cycles = self.cooldown_cycles.saturating_add(1);
@@ -114,4 +115,3 @@ impl WsReconnectStrategy for DeribitReconnect {
         self.retry_enabled
     }
 }
-

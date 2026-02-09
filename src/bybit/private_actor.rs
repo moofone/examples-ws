@@ -15,14 +15,15 @@ use std::time::Duration;
 use kameo::prelude::{Actor, ActorRef, Context, Message as KameoMessage, WeakActorRef};
 use tokio::sync::{mpsc, watch};
 
-use shared_ws::core::{
-    ForwardAllIngress, WebSocketBufferConfig, WsConnectionStats, WsConnectionStatus, WsTlsConfig,
-};
 use crate::endpoints::bybit::{
     BybitEvent, BybitSubOp, BybitSubscriptionManager, BybitSubscriptionRequest, BybitTopic,
     BybitTopicHandler,
 };
 use shared_ws::transport::tungstenite::TungsteniteTransport;
+use shared_ws::ws::{
+    ExponentialBackoffReconnect, ForwardAllIngress, WebSocketBufferConfig, WsConnectionStats,
+    WsConnectionStatus, WsTlsConfig,
+};
 use shared_ws::ws::{
     GetConnectionStats, GetConnectionStatus, WebSocketActor, WebSocketActorArgs, WebSocketEvent,
     WsSubscriptionUpdate,
@@ -96,7 +97,7 @@ struct ForwardingHandler {
     metrics: Arc<ForwardMetrics>,
 }
 
-impl shared_ws::core::WsEndpointHandler for ForwardingHandler {
+impl shared_ws::ws::WsEndpointHandler for ForwardingHandler {
     type Message = BybitEvent;
     type Error = crate::endpoints::bybit::BybitProtocolError;
     type Subscription = BybitSubscriptionManager;
@@ -112,14 +113,14 @@ impl shared_ws::core::WsEndpointHandler for ForwardingHandler {
     fn parse(
         &mut self,
         data: &[u8],
-    ) -> Result<shared_ws::core::WsParseOutcome<Self::Message>, Self::Error> {
+    ) -> Result<shared_ws::ws::WsParseOutcome<Self::Message>, Self::Error> {
         self.inner.parse(data)
     }
 
     fn parse_frame(
         &mut self,
-        frame: &shared_ws::core::WsFrame,
-    ) -> Result<shared_ws::core::WsParseOutcome<Self::Message>, Self::Error> {
+        frame: &shared_ws::ws::WsFrame,
+    ) -> Result<shared_ws::ws::WsParseOutcome<Self::Message>, Self::Error> {
         self.inner.parse_frame(frame)
     }
 
@@ -136,7 +137,7 @@ impl shared_ws::core::WsEndpointHandler for ForwardingHandler {
         code: Option<i32>,
         message: &str,
         data: Option<sonic_rs::Value>,
-    ) -> shared_ws::core::WsErrorAction {
+    ) -> shared_ws::ws::WsErrorAction {
         self.inner.handle_server_error(code, message, data)
     }
 
@@ -146,8 +147,8 @@ impl shared_ws::core::WsEndpointHandler for ForwardingHandler {
 
     fn classify_disconnect(
         &self,
-        cause: &shared_ws::core::WsDisconnectCause,
-    ) -> shared_ws::core::WsDisconnectAction {
+        cause: &shared_ws::ws::WsDisconnectCause,
+    ) -> shared_ws::ws::WsDisconnectAction {
         self.inner.classify_disconnect(cause)
     }
 
@@ -166,6 +167,7 @@ pub struct BybitPrivateActorArgs {
     pub outbound_capacity: usize,
     pub event_channel_capacity: usize,
     pub buffer_capacity: usize,
+    pub reconnect: ExponentialBackoffReconnect,
     pub enable_ping: bool,
     pub ping_interval: Duration,
     pub ping_timeout: Duration,
@@ -183,6 +185,11 @@ impl BybitPrivateActorArgs {
             outbound_capacity: 128,
             event_channel_capacity: 1024,
             buffer_capacity: 10_000,
+            reconnect: ExponentialBackoffReconnect::new(
+                Duration::from_millis(10),
+                Duration::from_millis(250),
+                1.5,
+            ),
             enable_ping: true,
             ping_interval: Duration::from_secs(20),
             ping_timeout: Duration::from_secs(30),
@@ -197,7 +204,7 @@ pub struct BybitPrivateActor {
         ActorRef<
             WebSocketActor<
                 ForwardingHandler,
-                shared_ws::core::ExponentialBackoffReconnect,
+                shared_ws::ws::ExponentialBackoffReconnect,
                 BybitJsonPingPong,
                 ForwardAllIngress<BybitEvent>,
                 TungsteniteTransport,
@@ -322,11 +329,12 @@ impl Actor for BybitPrivateActor {
         };
 
         let ping = BybitJsonPingPong::private(this.args.ping_interval, this.args.ping_timeout);
+        let reconnect = this.args.reconnect.clone();
         let ws = WebSocketActor::spawn(WebSocketActorArgs {
             url: this.args.url.clone(),
             tls: this.args.tls,
             transport: TungsteniteTransport::default(),
-            reconnect_strategy: shared_ws::core::ExponentialBackoffReconnect::default(),
+            reconnect_strategy: reconnect,
             handler,
             ingress: ForwardAllIngress::default(),
             ping_strategy: ping,
@@ -334,8 +342,6 @@ impl Actor for BybitPrivateActor {
             stale_threshold: this.args.stale_threshold,
             ws_buffers: this.args.ws_buffers,
             outbound_capacity: this.args.outbound_capacity,
-            global_rate_limit: None,
-            rate_limiter: None,
             circuit_breaker: None,
             latency_policy: None,
             payload_latency_sampling: None,
@@ -422,7 +428,7 @@ impl KameoMessage<SubscribeTopics> for BybitPrivateActor {
             topics,
         };
         ws.ask(WsSubscriptionUpdate {
-            action: shared_ws::core::WsSubscriptionAction::Add(vec![req]),
+            action: shared_ws::ws::WsSubscriptionAction::Add(vec![req]),
         })
         .await
         .map_err(|e| e.to_string())?;
@@ -458,7 +464,7 @@ impl KameoMessage<UnsubscribeTopics> for BybitPrivateActor {
             topics,
         };
         ws.ask(WsSubscriptionUpdate {
-            action: shared_ws::core::WsSubscriptionAction::Remove(vec![req]),
+            action: shared_ws::ws::WsSubscriptionAction::Remove(vec![req]),
         })
         .await
         .map_err(|e| e.to_string())?;
@@ -479,8 +485,14 @@ impl KameoMessage<GetStats> for BybitPrivateActor {
             return Err("ws not started".to_string());
         };
 
-        let stats = ws.ask(GetConnectionStats).await.map_err(|e| e.to_string())?;
-        let status = ws.ask(GetConnectionStatus).await.map_err(|e| e.to_string())?;
+        let stats = ws
+            .ask(GetConnectionStats)
+            .await
+            .map_err(|e| e.to_string())?;
+        let status = ws
+            .ask(GetConnectionStatus)
+            .await
+            .map_err(|e| e.to_string())?;
 
         Ok(BybitPrivateStats {
             forwarded: self.metrics.forwarded(),
@@ -503,8 +515,10 @@ impl KameoMessage<IsConnected> for BybitPrivateActor {
         let Some(ws) = self.ws.as_ref() else {
             return Ok(false);
         };
-        let status = ws.ask(GetConnectionStatus).await.map_err(|e| e.to_string())?;
+        let status = ws
+            .ask(GetConnectionStatus)
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(matches!(status, WsConnectionStatus::Connected))
     }
 }
-

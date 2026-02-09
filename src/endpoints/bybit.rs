@@ -14,7 +14,7 @@ use bytes::Bytes;
 use sonic_rs::JsonValueTrait;
 use thiserror::Error;
 
-use shared_ws::core::{
+use shared_ws::ws::{
     WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction, WsFrame,
     WsMessageAction, WsParseOutcome, WsSubscriptionAction, WsSubscriptionManager,
     WsSubscriptionStatus,
@@ -70,10 +70,7 @@ pub enum BybitProtocolError {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BybitEvent {
     /// Bybit topic notification (`topic` field present).
-    Topic {
-        topic: BybitTopic,
-        payload: Bytes,
-    },
+    Topic { topic: BybitTopic, payload: Bytes },
 }
 
 /// Subscription manager for Bybit v5 topic subscriptions.
@@ -142,6 +139,12 @@ impl Default for BybitSubscriptionManager {
 impl WsSubscriptionManager for BybitSubscriptionManager {
     type SubscriptionMessage = BybitSubscriptionRequest;
 
+    fn maybe_subscription_response(&self, data: &[u8]) -> bool {
+        // Bybit subscription ACK frames contain `"op":"subscribe"` / `"op":"unsubscribe"`.
+        // Most high-volume topic notifications do not include `"op"`.
+        memchr::memmem::find(data, b"\"op\"").is_some()
+    }
+
     fn initial_subscriptions(&mut self) -> Vec<Self::SubscriptionMessage> {
         if self.desired.is_empty() {
             return Vec::new();
@@ -206,6 +209,12 @@ impl WsSubscriptionManager for BybitSubscriptionManager {
     }
 
     fn handle_subscription_response(&mut self, data: &[u8]) -> WsSubscriptionStatus {
+        // Fast-path: skip parsing if it doesn't look like an ACK.
+        if memchr::memmem::find(data, b"\"op\"").is_none() {
+            return WsSubscriptionStatus::NotSubscriptionResponse;
+        }
+
+        // Parse only ACK frames (low-frequency) into a Value for ergonomic field access.
         let Ok(value) = sonic_rs::from_slice::<sonic_rs::Value>(data) else {
             return WsSubscriptionStatus::NotSubscriptionResponse;
         };
@@ -221,7 +230,12 @@ impl WsSubscriptionManager for BybitSubscriptionManager {
         let success = value
             .get("success")
             .and_then(|v| v.as_bool())
-            .or_else(|| value.get("retCode").and_then(|v| v.as_i64()).map(|code| code == 0))
+            .or_else(|| {
+                value
+                    .get("retCode")
+                    .and_then(|v| v.as_i64())
+                    .map(|code| code == 0)
+            })
             .unwrap_or(false);
 
         let message = value
@@ -290,9 +304,12 @@ impl WsEndpointHandler for BybitTopicHandler {
         Err(BybitProtocolError::InvalidJson)
     }
 
-    fn parse_frame(&mut self, frame: &WsFrame) -> Result<WsParseOutcome<Self::Message>, Self::Error> {
+    fn parse_frame(
+        &mut self,
+        frame: &WsFrame,
+    ) -> Result<WsParseOutcome<Self::Message>, Self::Error> {
         let payload: &Bytes = match frame {
-            WsFrame::Text(b) => b,
+            WsFrame::Text(b) => b.as_bytes(),
             WsFrame::Binary(b) => b,
             WsFrame::Ping(_) | WsFrame::Pong(_) | WsFrame::Close(_) => {
                 return Ok(WsParseOutcome::Message(WsMessageAction::Continue));
@@ -301,7 +318,10 @@ impl WsEndpointHandler for BybitTopicHandler {
 
         // Ignore JSON-level pong frames.
         let is_pong = match sonic_rs::get(payload, &["op"]) {
-            Ok(v) => v.as_str().map(|s| s.eq_ignore_ascii_case("pong")).unwrap_or(false),
+            Ok(v) => v
+                .as_str()
+                .map(|s| s.eq_ignore_ascii_case("pong"))
+                .unwrap_or(false),
             Err(_) => false,
         };
         if is_pong {
@@ -314,24 +334,24 @@ impl WsEndpointHandler for BybitTopicHandler {
                 if code == 0 {
                     // Not an error; continue parsing.
                 } else {
-                let message = sonic_rs::get(payload, &["retMsg"])
-                    .ok()
-                    .and_then(|v| v.as_str().map(|s| s.to_string()))
-                    .or_else(|| {
-                        sonic_rs::get(payload, &["ret_msg"])
-                            .ok()
-                            .and_then(|v| v.as_str().map(|s| s.to_string()))
-                    })
-                    .unwrap_or_else(|| "server error".to_string());
+                    let message = sonic_rs::get(payload, &["retMsg"])
+                        .ok()
+                        .and_then(|v| v.as_str().map(|s| s.to_string()))
+                        .or_else(|| {
+                            sonic_rs::get(payload, &["ret_msg"])
+                                .ok()
+                                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                        })
+                        .unwrap_or_else(|| "server error".to_string());
 
-                // Best-effort: include the parsed JSON so endpoint handlers can inspect it.
-                let data = sonic_rs::from_slice::<sonic_rs::Value>(payload.as_ref()).ok();
-                return Ok(WsParseOutcome::ServerError {
-                    code: Some(code as i32),
-                    message,
-                    data,
-                });
-            }
+                    // Best-effort: include the parsed JSON so endpoint handlers can inspect it.
+                    let data = sonic_rs::from_slice::<sonic_rs::Value>(payload.as_ref()).ok();
+                    return Ok(WsParseOutcome::ServerError {
+                        code: Some(code as i32),
+                        message,
+                        data,
+                    });
+                }
             }
         }
 
@@ -375,9 +395,7 @@ impl WsEndpointHandler for BybitTopicHandler {
 
     fn classify_disconnect(&self, cause: &WsDisconnectCause) -> WsDisconnectAction {
         match cause {
-            WsDisconnectCause::EndpointRequested { reason }
-                if reason == "disconnect requested" =>
-            {
+            WsDisconnectCause::EndpointRequested { reason } if reason == "disconnect requested" => {
                 WsDisconnectAction::Abort
             }
             _ => WsDisconnectAction::BackoffReconnect,

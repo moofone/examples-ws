@@ -14,7 +14,7 @@ use bytes::Bytes;
 use sonic_rs::JsonValueTrait;
 use thiserror::Error;
 
-use shared_ws::core::{
+use shared_ws::ws::{
     WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction, WsFrame,
     WsMessageAction, WsParseOutcome, WsSubscriptionAction, WsSubscriptionManager,
     WsSubscriptionStatus,
@@ -151,6 +151,12 @@ impl Default for DeribitSubscriptionManager {
 
 impl WsSubscriptionManager for DeribitSubscriptionManager {
     type SubscriptionMessage = DeribitSubscriptionRequest;
+
+    fn maybe_subscription_response(&self, data: &[u8]) -> bool {
+        // Deribit subscription ACK frames are JSON-RPC responses with an `id` field.
+        // Subscription notifications ("method":"subscription") do not carry `id`.
+        memchr::memmem::find(data, b"\"id\"").is_some()
+    }
 
     fn initial_subscriptions(&mut self) -> Vec<Self::SubscriptionMessage> {
         if self.desired.is_empty() {
@@ -316,7 +322,7 @@ impl WsEndpointHandler for DeribitPublicHandler {
         frame: &WsFrame,
     ) -> Result<WsParseOutcome<Self::Message>, Self::Error> {
         let payload: &Bytes = match frame {
-            WsFrame::Text(b) => b,
+            WsFrame::Text(b) => b.as_bytes(),
             WsFrame::Binary(b) => b,
             WsFrame::Ping(_) | WsFrame::Pong(_) | WsFrame::Close(_) => {
                 return Ok(WsParseOutcome::Message(WsMessageAction::Continue));
@@ -369,9 +375,7 @@ impl WsEndpointHandler for DeribitPublicHandler {
         //
         // Allow callers to perform an explicit "stay disconnected" by using a sentinel reason.
         match cause {
-            WsDisconnectCause::EndpointRequested { reason }
-                if reason == "disconnect requested" =>
-            {
+            WsDisconnectCause::EndpointRequested { reason } if reason == "disconnect requested" => {
                 WsDisconnectAction::Abort
             }
             _ => WsDisconnectAction::BackoffReconnect,

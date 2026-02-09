@@ -3,9 +3,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
+use examples_ws::endpoints::bybit::{BybitSubscriptionManager, BybitTopic, BybitTopicHandler};
 use kameo::Actor;
 use shared_ws::client::accept_async;
-use examples_ws::endpoints::bybit::{BybitSubscriptionManager, BybitTopic, BybitTopicHandler};
 use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::{
     WebSocketActor, WebSocketActorArgs, WebSocketBufferConfig, WebSocketEvent, WsMessage,
@@ -52,7 +52,13 @@ async fn spawn_bybit_server() -> (SocketAddr, mpsc::UnboundedReceiver<ServerEven
 
                 while let Some(msg) = ws.next().await {
                     match msg {
-                        Ok(WsMessage::Text(bytes)) | Ok(WsMessage::Binary(bytes)) => {
+                        Ok(WsMessage::Text(text)) => {
+                            let _ = tx.send(ServerEvent::Data {
+                                conn_id,
+                                bytes: text.into_bytes(),
+                            });
+                        }
+                        Ok(WsMessage::Binary(bytes)) => {
                             let _ = tx.send(ServerEvent::Data { conn_id, bytes });
                         }
                         Ok(WsMessage::Close(_)) => break,
@@ -82,7 +88,7 @@ async fn bybit_auth_is_sent_before_initial_subscribe() {
         transport: TungsteniteTransport::default(),
         reconnect_strategy: FastReconnect,
         handler,
-        ingress: shared_ws::core::ForwardAllIngress::default(),
+        ingress: shared_ws::ws::ForwardAllIngress::default(),
         ping_strategy: examples_ws::bybit::ping::BybitJsonPingPong::private(
             Duration::from_secs(60),
             Duration::from_secs(60),
@@ -90,9 +96,7 @@ async fn bybit_auth_is_sent_before_initial_subscribe() {
         enable_ping: false,
         stale_threshold: Duration::from_secs(30),
         ws_buffers: WebSocketBufferConfig::default(),
-        global_rate_limit: None,
         outbound_capacity: 32,
-        rate_limiter: None,
         circuit_breaker: None,
         latency_policy: None,
         payload_latency_sampling: None,

@@ -11,5 +11,5 @@ pub mod instruments;
 pub mod reconnect;
 
 pub mod options_actor;
+pub mod private_actor;
 pub mod public_actor;
-

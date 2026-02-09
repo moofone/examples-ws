@@ -3,11 +3,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
+use examples_ws::deribit::instruments::{DeribitInstrument, DeribitInstrumentsProvider};
+use examples_ws::deribit::options_actor::{
+    Connect, DeribitOptionsActor, DeribitOptionsActorArgs, SubscribeCurrencies,
+};
 use futures_util::future::BoxFuture;
 use kameo::Actor;
 use shared_ws::client::accept_async;
-use examples_ws::deribit::instruments::{DeribitInstrument, DeribitInstrumentsProvider};
-use examples_ws::deribit::options_actor::{Connect, DeribitOptionsActor, DeribitOptionsActorArgs, SubscribeCurrencies};
 use shared_ws::ws::WsTlsConfig;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -35,11 +37,13 @@ async fn spawn_ws_server() -> (SocketAddr, mpsc::UnboundedReceiver<ServerEvent>)
 
                 while let Some(msg) = ws.next().await {
                     match msg {
-                        Ok(shared_ws::core::WsFrame::Text(bytes))
-                        | Ok(shared_ws::core::WsFrame::Binary(bytes)) => {
+                        Ok(shared_ws::ws::WsFrame::Text(text)) => {
+                            let _ = tx.send(ServerEvent::Data(text.into_bytes()));
+                        }
+                        Ok(shared_ws::ws::WsFrame::Binary(bytes)) => {
                             let _ = tx.send(ServerEvent::Data(bytes));
                         }
-                        Ok(shared_ws::core::WsFrame::Close(_)) => break,
+                        Ok(shared_ws::ws::WsFrame::Close(_)) => break,
                         Err(_) => break,
                         _ => {}
                     }
@@ -55,7 +59,10 @@ async fn spawn_ws_server() -> (SocketAddr, mpsc::UnboundedReceiver<ServerEvent>)
 struct MockInstruments;
 
 impl DeribitInstrumentsProvider for MockInstruments {
-    fn get_instruments(&self, currency: &str) -> BoxFuture<'static, Result<Vec<DeribitInstrument>, String>> {
+    fn get_instruments(
+        &self,
+        currency: &str,
+    ) -> BoxFuture<'static, Result<Vec<DeribitInstrument>, String>> {
         let currency = currency.to_string();
         Box::pin(async move {
             if currency != "BTC" {
@@ -92,13 +99,15 @@ async fn options_actor_subscribe_currencies_emits_expected_channels() {
     let provider: Arc<dyn DeribitInstrumentsProvider> = Arc::new(MockInstruments);
     let args = DeribitOptionsActorArgs {
         url: format!("ws://{addr}"),
-        tls: WsTlsConfig { validate_certs: false },
+        tls: WsTlsConfig {
+            validate_certs: false,
+        },
         ticker_interval: "raw".to_string(),
         stale_threshold: Duration::from_secs(30),
         enable_ping: false,
         ping_interval: Duration::from_secs(60),
         ping_timeout: Duration::from_secs(60),
-        ws_buffers: shared_ws::core::WebSocketBufferConfig::default(),
+        ws_buffers: shared_ws::ws::WebSocketBufferConfig::default(),
         outbound_capacity: 256,
         event_channel_capacity: 128,
         buffer_capacity: 1024,
@@ -140,5 +149,8 @@ async fn options_actor_subscribe_currencies_emits_expected_channels() {
     assert!(s.contains("\"method\":\"public/subscribe\""), "payload={s}");
     assert!(s.contains("ticker.BTC-27DEC24-80000-P.raw"), "payload={s}");
     assert!(s.contains("ticker.BTC-PERPETUAL.raw"), "payload={s}");
-    assert!(s.contains("deribit_volatility_index.btc_usd"), "payload={s}");
+    assert!(
+        s.contains("deribit_volatility_index.btc_usd"),
+        "payload={s}"
+    );
 }

@@ -6,12 +6,12 @@ use std::sync::{
 use std::time::Duration;
 
 use bytes::Bytes;
-use kameo::Actor;
-use shared_ws::client::accept_async;
 use examples_ws::endpoints::bybit::{
-    BybitEvent, BybitSubscriptionManager, BybitSubOp, BybitSubscriptionRequest, BybitTopic,
+    BybitEvent, BybitSubOp, BybitSubscriptionManager, BybitSubscriptionRequest, BybitTopic,
     BybitTopicHandler,
 };
+use kameo::Actor;
+use shared_ws::client::accept_async;
 use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::{
     WebSocketActor, WebSocketActorArgs, WebSocketBufferConfig, WebSocketEvent, WsDisconnectAction,
@@ -59,7 +59,13 @@ async fn spawn_bybit_server() -> (SocketAddr, mpsc::UnboundedReceiver<ServerEven
 
                 while let Some(msg) = ws.next().await {
                     match msg {
-                        Ok(WsMessage::Text(bytes)) | Ok(WsMessage::Binary(bytes)) => {
+                        Ok(WsMessage::Text(text)) => {
+                            let _ = tx.send(ServerEvent::Data {
+                                conn_id,
+                                bytes: text.into_bytes(),
+                            });
+                        }
+                        Ok(WsMessage::Binary(bytes)) => {
                             let _ = tx.send(ServerEvent::Data { conn_id, bytes });
                         }
                         Ok(WsMessage::Close(_)) => break,
@@ -110,7 +116,7 @@ impl WsEndpointHandler for CapturingHandler {
 
     fn parse_frame(
         &mut self,
-        frame: &shared_ws::core::WsFrame,
+        frame: &shared_ws::ws::WsFrame,
     ) -> Result<WsParseOutcome<Self::Message>, Self::Error> {
         self.inner.parse_frame(frame)
     }
@@ -147,9 +153,8 @@ impl WsEndpointHandler for CapturingHandler {
 async fn bybit_sends_subscribe_on_connect_and_parses_topic_notification() {
     let (addr, mut server_rx) = spawn_bybit_server().await;
 
-    let subs = BybitSubscriptionManager::with_initial_topics([BybitTopic::from(
-        "publicTrade.BTCUSDT",
-    )]);
+    let subs =
+        BybitSubscriptionManager::with_initial_topics([BybitTopic::from("publicTrade.BTCUSDT")]);
     let handler = BybitTopicHandler::new(subs);
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let handler = CapturingHandler::new(handler, event_tx);
@@ -160,14 +165,15 @@ async fn bybit_sends_subscribe_on_connect_and_parses_topic_notification() {
         transport: TungsteniteTransport::default(),
         reconnect_strategy: FastReconnect,
         handler,
-        ingress: shared_ws::core::ForwardAllIngress::default(),
-        ping_strategy: shared_ws::ws::ProtocolPingPong::new(Duration::from_secs(60), Duration::from_secs(60)),
+        ingress: shared_ws::ws::ForwardAllIngress::default(),
+        ping_strategy: shared_ws::ws::ProtocolPingPong::new(
+            Duration::from_secs(60),
+            Duration::from_secs(60),
+        ),
         enable_ping: false,
         stale_threshold: Duration::from_secs(30),
         ws_buffers: WebSocketBufferConfig::default(),
-        global_rate_limit: None,
         outbound_capacity: 32,
-        rate_limiter: None,
         circuit_breaker: None,
         latency_policy: None,
         payload_latency_sampling: None,
@@ -203,7 +209,9 @@ async fn bybit_sends_subscribe_on_connect_and_parses_topic_notification() {
         br#"{"topic":"publicTrade.BTCUSDT","type":"snapshot","data":[{"symbol":"BTCUSDT"}]}"#,
     );
     actor
-        .ask(WebSocketEvent::Inbound(WsMessage::Text(notif.clone())))
+        .ask(WebSocketEvent::Inbound(shared_ws::ws::into_ws_message(
+            notif.clone(),
+        )))
         .await
         .unwrap();
 
@@ -235,14 +243,15 @@ async fn bybit_dynamic_subscription_update_emits_subscribe_request() {
         transport: TungsteniteTransport::default(),
         reconnect_strategy: FastReconnect,
         handler,
-        ingress: shared_ws::core::ForwardAllIngress::default(),
-        ping_strategy: shared_ws::ws::ProtocolPingPong::new(Duration::from_secs(60), Duration::from_secs(60)),
+        ingress: shared_ws::ws::ForwardAllIngress::default(),
+        ping_strategy: shared_ws::ws::ProtocolPingPong::new(
+            Duration::from_secs(60),
+            Duration::from_secs(60),
+        ),
         enable_ping: false,
         stale_threshold: Duration::from_secs(30),
         ws_buffers: WebSocketBufferConfig::default(),
-        global_rate_limit: None,
         outbound_capacity: 32,
-        rate_limiter: None,
         circuit_breaker: None,
         latency_policy: None,
         payload_latency_sampling: None,

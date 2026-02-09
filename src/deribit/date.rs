@@ -68,4 +68,3 @@ fn civil_from_days(days: i64) -> (i32, u8, u8) {
     let year = (y + (m <= 2) as i64) as i32;
     (year, m as u8, d as u8)
 }
-

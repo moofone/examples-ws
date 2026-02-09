@@ -11,63 +11,30 @@ use shared_ws::ws::{
     WsEndpointHandler, WsErrorAction, WsParseOutcome,
 };
 use shared_ws::ws::{
-    WebSocketActor, WebSocketActorArgs, WebSocketEvent, WsReconnectStrategy, WsTlsConfig,
+    ProtocolPingPong, WebSocketActor, WebSocketActorArgs, WebSocketEvent, WsTlsConfig,
 };
 
-use examples_ws::bybit::ping::BybitJsonPingPong;
-use examples_ws::endpoints::bybit::{
-    BybitEvent, BybitSubscriptionManager, BybitTopic, BybitTopicHandler,
+use examples_ws::deribit::reconnect::DeribitReconnect;
+use examples_ws::endpoints::deribit::{
+    DeribitChannel, DeribitEvent, DeribitProtocolError, DeribitPublicHandler,
+    DeribitSubscriptionManager,
 };
-
-#[derive(Clone, Debug)]
-struct ExponentialReconnect {
-    base: Duration,
-    max: Duration,
-    cur: Duration,
-}
-
-impl ExponentialReconnect {
-    fn new(base: Duration, max: Duration) -> Self {
-        Self {
-            base,
-            max,
-            cur: base,
-        }
-    }
-}
-
-impl WsReconnectStrategy for ExponentialReconnect {
-    fn next_delay(&mut self) -> Duration {
-        let delay = self.cur;
-        let next = (self.cur.as_secs_f64() * 1.5).min(self.max.as_secs_f64());
-        self.cur = Duration::from_secs_f64(next.max(self.base.as_secs_f64()));
-        delay
-    }
-
-    fn reset(&mut self) {
-        self.cur = self.base;
-    }
-
-    fn should_retry(&self) -> bool {
-        true
-    }
-}
 
 #[derive(Clone)]
 struct PrintingHandler {
-    inner: BybitTopicHandler,
+    inner: DeribitPublicHandler,
 }
 
 impl PrintingHandler {
-    fn new(inner: BybitTopicHandler) -> Self {
+    fn new(inner: DeribitPublicHandler) -> Self {
         Self { inner }
     }
 }
 
 impl WsEndpointHandler for PrintingHandler {
-    type Message = BybitEvent;
-    type Error = examples_ws::endpoints::bybit::BybitProtocolError;
-    type Subscription = BybitSubscriptionManager;
+    type Message = DeribitEvent;
+    type Error = DeribitProtocolError;
+    type Subscription = DeribitSubscriptionManager;
 
     fn subscription_manager(&mut self) -> &mut Self::Subscription {
         self.inner.subscription_manager()
@@ -79,7 +46,7 @@ impl WsEndpointHandler for PrintingHandler {
 
     fn parse(&mut self, _data: &[u8]) -> Result<WsParseOutcome<Self::Message>, Self::Error> {
         // Prefer `parse_frame` (zero-copy).
-        Err(examples_ws::endpoints::bybit::BybitProtocolError::InvalidJson)
+        Err(DeribitProtocolError::InvalidJson)
     }
 
     fn parse_frame(
@@ -91,16 +58,16 @@ impl WsEndpointHandler for PrintingHandler {
 
     fn handle_message(&mut self, msg: Self::Message) -> Result<(), Self::Error> {
         match msg {
-            BybitEvent::Topic { topic, payload } => {
-                if topic.0.starts_with("publicTrade.") {
+            DeribitEvent::Subscription { channel, payload } => {
+                if channel.0.starts_with("trades.") {
                     for t in parse_public_trade_payload(&payload) {
                         // Print as a Rust struct (Debug) for easy log scraping / replay.
                         println!("{t:?}");
                     }
                 } else {
                     println!(
-                        "topic {} {}",
-                        topic.0,
+                        "channel {} {}",
+                        channel.0,
                         String::from_utf8_lossy(payload.as_ref())
                     );
                 }
@@ -129,15 +96,24 @@ impl WsEndpointHandler for PrintingHandler {
 
 #[derive(Debug, Clone)]
 struct Trade {
-    symbol: String,
-    side: String,
+    instrument: String,
+    direction: String,
     price: String,
-    qty: String,
+    amount: String,
     ts_ms: i64,
+    trade_id: String,
 }
 
 fn v_str<'a>(v: &'a sonic_rs::Value) -> Option<&'a str> {
     v.as_str()
+}
+
+fn v_to_string(v: &sonic_rs::Value) -> Option<String> {
+    v.as_str()
+        .map(|s| s.to_string())
+        .or_else(|| v.as_i64().map(|n| n.to_string()))
+        .or_else(|| v.as_u64().map(|n| n.to_string()))
+        .or_else(|| v.as_f64().map(|f| f.to_string()))
 }
 
 fn parse_public_trade_payload(payload: &Bytes) -> Vec<Trade> {
@@ -145,67 +121,53 @@ fn parse_public_trade_payload(payload: &Bytes) -> Vec<Trade> {
         return Vec::new();
     };
 
-    let Some(data) = value.get("data").and_then(|v| v.as_array()) else {
+    let Some(data) = value
+        .get("params")
+        .and_then(|v| v.get("data"))
+        .and_then(|v| v.as_array())
+    else {
         return Vec::new();
     };
 
     data.iter()
         .filter_map(|row| {
-            let symbol = row
-                .get("symbol")
+            let instrument = row
+                .get("instrument_name")
                 .and_then(v_str)
-                .or_else(|| row.get("s").and_then(v_str))
                 .unwrap_or("?")
                 .to_string();
 
-            let side = row
-                .get("side")
+            let direction = row
+                .get("direction")
                 .and_then(v_str)
-                .or_else(|| row.get("S").and_then(v_str))
                 .unwrap_or("?")
                 .to_string();
 
             let price = row
                 .get("price")
-                .and_then(v_str)
-                .or_else(|| row.get("p").and_then(v_str))
-                .map(|s| s.to_string())
-                .or_else(|| {
-                    row.get("price")
-                        .and_then(|v| v.as_f64())
-                        .map(|f| f.to_string())
-                })
-                .or_else(|| row.get("p").and_then(|v| v.as_f64()).map(|f| f.to_string()))
+                .and_then(v_to_string)
                 .unwrap_or_else(|| "?".to_string());
 
-            let qty = row
-                .get("size")
-                .and_then(v_str)
-                .or_else(|| row.get("v").and_then(v_str))
-                .or_else(|| row.get("q").and_then(v_str))
-                .map(|s| s.to_string())
-                .or_else(|| {
-                    row.get("size")
-                        .and_then(|v| v.as_f64())
-                        .map(|f| f.to_string())
-                })
-                .or_else(|| row.get("v").and_then(|v| v.as_f64()).map(|f| f.to_string()))
-                .or_else(|| row.get("q").and_then(|v| v.as_f64()).map(|f| f.to_string()))
+            let amount = row
+                .get("amount")
+                .and_then(v_to_string)
                 .unwrap_or_else(|| "?".to_string());
 
-            let ts_ms = row
-                .get("tradeTime")
-                .and_then(|v| v.as_i64())
-                .or_else(|| row.get("T").and_then(|v| v.as_i64()))
-                .or_else(|| row.get("t").and_then(|v| v.as_i64()))
-                .unwrap_or(0);
+            let ts_ms = row.get("timestamp").and_then(|v| v.as_i64()).unwrap_or(0);
+
+            let trade_id = row
+                .get("trade_id")
+                .and_then(v_str)
+                .unwrap_or("")
+                .to_string();
 
             Some(Trade {
-                symbol,
-                side,
+                instrument,
+                direction,
                 price,
-                qty,
+                amount,
                 ts_ms,
+                trade_id,
             })
         })
         .collect()
@@ -230,37 +192,37 @@ fn has_flag(args: &[String], name: &str) -> bool {
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
     if has_flag(&args, "--help") || has_flag(&args, "-h") {
-        eprintln!("Usage: bybit_public_trades_spot [--symbol SOLUSDT] [--testnet] [--url WS_URL]");
+        eprintln!(
+            "Usage: deribit_public_trades [--instrument BTC-PERPETUAL] [--testnet] [--url WS_URL]"
+        );
         return;
     }
 
-    let symbol = arg_value(&args, "--symbol").unwrap_or_else(|| "SOLUSDT".to_string());
-    let topic = format!("publicTrade.{symbol}");
+    let instrument =
+        arg_value(&args, "--instrument").unwrap_or_else(|| "BTC-PERPETUAL".to_string());
+    let channel = format!("trades.{instrument}.raw");
 
     let url = if let Some(u) = arg_value(&args, "--url") {
         u
     } else if has_flag(&args, "--testnet") {
-        "wss://stream-testnet.bybit.com/v5/public/spot".to_string()
+        "wss://test.deribit.com/ws/api/v2".to_string()
     } else {
-        "wss://stream.bybit.com/v5/public/spot".to_string()
+        "wss://www.deribit.com/ws/api/v2".to_string()
     };
 
-    println!("connecting url={url} topic={topic}");
+    println!("connecting url={url} channel={channel}");
 
-    let subs = BybitSubscriptionManager::with_initial_topics([BybitTopic(topic)]);
-    let handler = PrintingHandler::new(BybitTopicHandler::new(subs));
+    let subs = DeribitSubscriptionManager::with_initial_channels([DeribitChannel(channel)]);
+    let handler = PrintingHandler::new(DeribitPublicHandler::new(subs));
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url,
         tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
-        reconnect_strategy: ExponentialReconnect::new(
-            Duration::from_secs(1),
-            Duration::from_secs(30),
-        ),
+        reconnect_strategy: DeribitReconnect::default(),
         handler,
         ingress: ForwardAllIngress::default(),
-        ping_strategy: BybitJsonPingPong::public(Duration::from_secs(20), Duration::from_secs(30)),
+        ping_strategy: ProtocolPingPong::new(Duration::from_secs(20), Duration::from_secs(30)),
         enable_ping: true,
         stale_threshold: Duration::from_secs(60),
         ws_buffers: WebSocketBufferConfig::default(),

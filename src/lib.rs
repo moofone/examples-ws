@@ -5,5 +5,6 @@
 //! generic `shared-ws` infrastructure.
 
 pub mod bybit;
+pub mod candles;
 pub mod deribit;
 pub mod endpoints;

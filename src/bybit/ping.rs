@@ -3,7 +3,7 @@ use tokio::time::Duration;
 
 use sonic_rs::JsonValueTrait;
 
-use shared_ws::core::{WsApplicationPingPong, WsPingPongStrategy};
+use shared_ws::ws::{WsApplicationPingPong, WsPingPongStrategy};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BybitReqIdField {
@@ -102,12 +102,13 @@ impl BybitJsonPingPong {
             (payload, key)
         });
 
-        let parse: Box<dyn Fn(&Bytes) -> Option<String> + Send + Sync> = Box::new(move |payload: &Bytes| {
-            let Some((_is_pong, req)) = parse_bybit_pong_key(payload) else {
-                return None;
-            };
-            req
-        });
+        let parse: Box<dyn Fn(&Bytes) -> Option<String> + Send + Sync> =
+            Box::new(move |payload: &Bytes| {
+                let Some((_is_pong, req)) = parse_bybit_pong_key(payload) else {
+                    return None;
+                };
+                req
+            });
 
         Self {
             inner: WsApplicationPingPong::new(interval, timeout, create, parse).with_max_pending(8),
@@ -127,14 +128,14 @@ impl BybitJsonPingPong {
         });
         let parse: Box<dyn Fn(&Bytes) -> Option<String> + Send + Sync> =
             Box::new(move |payload: &Bytes| {
-            let Some((is_pong, req)) = parse_bybit_pong_key(payload) else {
-                return None;
-            };
-            if !is_pong {
-                return None;
-            }
-            Some(req.unwrap_or_else(|| key.to_string()))
-        });
+                let Some((is_pong, req)) = parse_bybit_pong_key(payload) else {
+                    return None;
+                };
+                if !is_pong {
+                    return None;
+                }
+                Some(req.unwrap_or_else(|| key.to_string()))
+            });
         Self {
             inner: WsApplicationPingPong::new(interval, timeout, create, parse).with_max_pending(8),
         }
@@ -149,14 +150,14 @@ impl BybitJsonPingPong {
         });
         let parse: Box<dyn Fn(&Bytes) -> Option<String> + Send + Sync> =
             Box::new(move |payload: &Bytes| {
-            let Some((is_pong, req)) = parse_bybit_pong_key(payload) else {
-                return None;
-            };
-            if !is_pong {
-                return None;
-            }
-            req
-        });
+                let Some((is_pong, req)) = parse_bybit_pong_key(payload) else {
+                    return None;
+                };
+                if !is_pong {
+                    return None;
+                }
+                req
+            });
         Self {
             inner: WsApplicationPingPong::new(interval, timeout, create, parse).with_max_pending(8),
         }
@@ -164,11 +165,11 @@ impl BybitJsonPingPong {
 }
 
 impl WsPingPongStrategy for BybitJsonPingPong {
-    fn create_ping(&mut self) -> Option<shared_ws::core::WsFrame> {
+    fn create_ping(&mut self) -> Option<shared_ws::ws::WsFrame> {
         self.inner.create_ping()
     }
 
-    fn handle_inbound(&mut self, message: &shared_ws::core::WsFrame) -> shared_ws::core::WsPongResult {
+    fn handle_inbound(&mut self, message: &shared_ws::ws::WsFrame) -> shared_ws::ws::WsPongResult {
         self.inner.handle_inbound(message)
     }
 
@@ -188,4 +189,3 @@ impl WsPingPongStrategy for BybitJsonPingPong {
         self.inner.timeout()
     }
 }
-

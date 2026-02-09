@@ -15,23 +15,23 @@ use std::time::Duration;
 use kameo::prelude::{Actor, ActorRef, Context, Message as KameoMessage, WeakActorRef};
 use tokio::sync::{Notify, mpsc, watch};
 
-use shared_ws::core::{
-    ForwardAllIngress, WebSocketBufferConfig, WsConnectionStats, WsConnectionStatus,
-    WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction, WsParseOutcome,
-    WsSubscriptionAction, WsTlsConfig,
-};
 use crate::endpoints::deribit::{
     DeribitChannel, DeribitEvent, DeribitProtocolError, DeribitPublicHandler, DeribitSubOp,
     DeribitSubscriptionManager, DeribitSubscriptionRequest,
 };
 use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::{
+    ForwardAllIngress, WebSocketBufferConfig, WsConnectionStats, WsConnectionStatus,
+    WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction, WsParseOutcome,
+    WsSubscriptionAction, WsTlsConfig,
+};
+use shared_ws::ws::{
     GetConnectionStats, GetConnectionStatus, ProtocolPingPong, WebSocketActor, WebSocketActorArgs,
     WebSocketEvent, WsSubscriptionUpdate,
 };
 
 use super::date::{UtcDate, utc_date_from_unix_ms, utc_today};
-use super::instruments::{DeribitInstrumentsProvider, DeribitInstrument};
+use super::instruments::{DeribitInstrument, DeribitInstrumentsProvider};
 use super::reconnect::DeribitReconnect;
 
 #[derive(Debug, Default)]
@@ -63,6 +63,10 @@ fn orderbook_channel(instrument: &str, depth: u8, interval: &str) -> DeribitChan
     DeribitChannel(format!("book.{instrument}.{depth}.{interval}"))
 }
 
+fn trades_channel(instrument: &str, interval: &str) -> DeribitChannel {
+    DeribitChannel(format!("trades.{instrument}.{interval}"))
+}
+
 /// Message: subscribe to an instrument's orderbook (dynamic).
 #[derive(Debug, Clone)]
 pub struct SubscribeOrderBook {
@@ -73,6 +77,12 @@ pub struct SubscribeOrderBook {
 /// Message: subscribe to an instrument's ticker (dynamic).
 #[derive(Debug, Clone)]
 pub struct SubscribeTicker {
+    pub instrument: String,
+}
+
+/// Message: subscribe to an instrument's trade stream (dynamic).
+#[derive(Debug, Clone)]
+pub struct SubscribeTrades {
     pub instrument: String,
 }
 
@@ -142,7 +152,7 @@ impl WsEndpointHandler for ForwardingHandler {
 
     fn parse_frame(
         &mut self,
-        frame: &shared_ws::core::WsFrame,
+        frame: &shared_ws::ws::WsFrame,
     ) -> Result<WsParseOutcome<Self::Message>, Self::Error> {
         self.inner.parse_frame(frame)
     }
@@ -223,12 +233,23 @@ impl DeribitPublicActorArgs {
 
 pub struct DeribitPublicActor {
     args: DeribitPublicActorArgs,
-    ws: Option<ActorRef<WebSocketActor<ForwardingHandler, DeribitReconnect, ProtocolPingPong, ForwardAllIngress<DeribitEvent>, TungsteniteTransport>>>,
+    ws: Option<
+        ActorRef<
+            WebSocketActor<
+                ForwardingHandler,
+                DeribitReconnect,
+                ProtocolPingPong,
+                ForwardAllIngress<DeribitEvent>,
+                TungsteniteTransport,
+            >,
+        >,
+    >,
     on_open: Arc<Notify>,
     metrics: Arc<ForwardMetrics>,
     sink_tx: watch::Sender<Option<mpsc::Sender<DeribitEvent>>>,
     subscribed_orderbooks: HashSet<String>,
     subscribed_tickers: HashSet<String>,
+    subscribed_trades: HashSet<String>,
     cached_expiries: HashMap<String, Vec<UtcDate>>,
     expiry_task: Option<tokio::task::JoinHandle<()>>,
     forward_task: Option<tokio::task::JoinHandle<()>>,
@@ -245,6 +266,7 @@ impl DeribitPublicActor {
             sink_tx,
             subscribed_orderbooks: HashSet::new(),
             subscribed_tickers: HashSet::new(),
+            subscribed_trades: HashSet::new(),
             cached_expiries: HashMap::new(),
             expiry_task: None,
             forward_task: None,
@@ -434,8 +456,6 @@ impl Actor for DeribitPublicActor {
             stale_threshold: this.args.stale_threshold,
             ws_buffers: this.args.ws_buffers,
             outbound_capacity: this.args.outbound_capacity,
-            global_rate_limit: None,
-            rate_limiter: None,
             circuit_breaker: None,
             latency_policy: None,
             payload_latency_sampling: None,
@@ -555,6 +575,37 @@ impl KameoMessage<SubscribeTicker> for DeribitPublicActor {
     }
 }
 
+impl KameoMessage<SubscribeTrades> for DeribitPublicActor {
+    type Reply = Result<(), String>;
+
+    async fn handle(
+        &mut self,
+        msg: SubscribeTrades,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        if self.subscribed_trades.contains(&msg.instrument) {
+            return Ok(());
+        }
+        let Some(ws) = self.ws.as_ref() else {
+            return Err("ws not started".to_string());
+        };
+
+        let ch = trades_channel(&msg.instrument, &self.args.ticker_interval);
+        let req = DeribitSubscriptionRequest {
+            op: DeribitSubOp::Subscribe,
+            channels: vec![ch],
+        };
+        ws.ask(WsSubscriptionUpdate {
+            action: WsSubscriptionAction::Add(vec![req]),
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+
+        self.subscribed_trades.insert(msg.instrument);
+        Ok(())
+    }
+}
+
 impl KameoMessage<GetStats> for DeribitPublicActor {
     type Reply = Result<DeribitPublicStats, String>;
 
@@ -579,7 +630,9 @@ impl KameoMessage<GetStats> for DeribitPublicActor {
         Ok(DeribitPublicStats {
             forwarded: self.metrics.forwarded(),
             dropped: self.metrics.dropped(),
-            subscribed_instruments: self.subscribed_orderbooks.len() + self.subscribed_tickers.len(),
+            subscribed_instruments: self.subscribed_orderbooks.len()
+                + self.subscribed_tickers.len()
+                + self.subscribed_trades.len(),
             connection: status,
             stats,
         })

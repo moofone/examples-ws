@@ -22,6 +22,8 @@ impl DeribitInstrument {
 
 /// Instrument discovery boundary (typically backed by REST).
 pub trait DeribitInstrumentsProvider: Send + Sync + 'static {
-    fn get_instruments(&self, currency: &str) -> BoxFuture<'static, Result<Vec<DeribitInstrument>, String>>;
+    fn get_instruments(
+        &self,
+        currency: &str,
+    ) -> BoxFuture<'static, Result<Vec<DeribitInstrument>, String>>;
 }
-

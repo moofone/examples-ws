@@ -6,12 +6,12 @@ use std::sync::{
 use std::time::Duration;
 
 use bytes::Bytes;
-use kameo::Actor;
-use shared_ws::client::accept_async;
 use examples_ws::endpoints::deribit::{
     DeribitChannel, DeribitEvent, DeribitPublicHandler, DeribitSubOp, DeribitSubscriptionManager,
     DeribitSubscriptionRequest,
 };
+use kameo::Actor;
+use shared_ws::client::accept_async;
 use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::{
     ProtocolPingPong, WebSocketActor, WebSocketActorArgs, WebSocketBufferConfig, WebSocketEvent,
@@ -59,7 +59,13 @@ async fn spawn_deribit_server() -> (SocketAddr, mpsc::UnboundedReceiver<ServerEv
 
                 while let Some(msg) = ws.next().await {
                     match msg {
-                        Ok(WsMessage::Text(bytes)) | Ok(WsMessage::Binary(bytes)) => {
+                        Ok(WsMessage::Text(text)) => {
+                            let _ = tx.send(ServerEvent::Data {
+                                conn_id,
+                                bytes: text.into_bytes(),
+                            });
+                        }
+                        Ok(WsMessage::Binary(bytes)) => {
                             let _ = tx.send(ServerEvent::Data { conn_id, bytes });
                         }
                         Ok(WsMessage::Close(_)) => break,
@@ -110,7 +116,7 @@ impl WsEndpointHandler for CapturingHandler {
 
     fn parse_frame(
         &mut self,
-        frame: &shared_ws::core::WsFrame,
+        frame: &shared_ws::ws::WsFrame,
     ) -> Result<WsParseOutcome<Self::Message>, Self::Error> {
         self.inner.parse_frame(frame)
     }
@@ -160,14 +166,12 @@ async fn deribit_sends_subscribe_on_connect_and_parses_subscription_notification
         transport: TungsteniteTransport::default(),
         reconnect_strategy: FastReconnect,
         handler,
-        ingress: shared_ws::core::ForwardAllIngress::default(),
+        ingress: shared_ws::ws::ForwardAllIngress::default(),
         ping_strategy: ProtocolPingPong::new(Duration::from_secs(60), Duration::from_secs(60)),
         enable_ping: false,
         stale_threshold: Duration::from_secs(30),
         ws_buffers: WebSocketBufferConfig::default(),
-        global_rate_limit: None,
         outbound_capacity: 32,
-        rate_limiter: None,
         circuit_breaker: None,
         latency_policy: None,
         payload_latency_sampling: None,
@@ -205,7 +209,9 @@ async fn deribit_sends_subscribe_on_connect_and_parses_subscription_notification
         br#"{"jsonrpc":"2.0","method":"subscription","params":{"channel":"ticker.BTC-PERPETUAL.raw","data":{"timestamp":1700000000000}}}"#,
     );
     actor
-        .ask(WebSocketEvent::Inbound(WsMessage::Text(notif.clone())))
+        .ask(WebSocketEvent::Inbound(shared_ws::ws::into_ws_message(
+            notif.clone(),
+        )))
         .await
         .unwrap();
 
@@ -237,14 +243,12 @@ async fn deribit_dynamic_subscription_update_emits_subscribe_request() {
         transport: TungsteniteTransport::default(),
         reconnect_strategy: FastReconnect,
         handler,
-        ingress: shared_ws::core::ForwardAllIngress::default(),
+        ingress: shared_ws::ws::ForwardAllIngress::default(),
         ping_strategy: ProtocolPingPong::new(Duration::from_secs(60), Duration::from_secs(60)),
         enable_ping: false,
         stale_threshold: Duration::from_secs(30),
         ws_buffers: WebSocketBufferConfig::default(),
-        global_rate_limit: None,
         outbound_capacity: 32,
-        rate_limiter: None,
         circuit_breaker: None,
         latency_policy: None,
         payload_latency_sampling: None,

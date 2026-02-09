@@ -18,22 +18,22 @@ use std::time::Duration;
 use kameo::prelude::{Actor, ActorRef, Context, Message as KameoMessage, WeakActorRef};
 use tokio::sync::{mpsc, watch};
 
-use shared_ws::core::{
-    ForwardAllIngress, WebSocketBufferConfig, WsConnectionStats, WsConnectionStatus,
-    WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction,
-    WsParseOutcome, WsSubscriptionAction, WsTlsConfig,
-};
 use crate::endpoints::deribit::{
     DeribitChannel, DeribitEvent, DeribitProtocolError, DeribitPublicHandler, DeribitSubOp,
     DeribitSubscriptionManager, DeribitSubscriptionRequest,
 };
 use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::{
+    ForwardAllIngress, WebSocketBufferConfig, WsConnectionStats, WsConnectionStatus,
+    WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction, WsParseOutcome,
+    WsSubscriptionAction, WsTlsConfig,
+};
+use shared_ws::ws::{
     GetConnectionStats, GetConnectionStatus, ProtocolPingPong, WebSocketActor, WebSocketActorArgs,
     WebSocketEvent, WsSubscriptionUpdate,
 };
 
-use super::instruments::{DeribitInstrumentsProvider, DeribitInstrument};
+use super::instruments::{DeribitInstrument, DeribitInstrumentsProvider};
 use super::reconnect::DeribitReconnect;
 
 #[derive(Debug, Default)]
@@ -134,7 +134,7 @@ impl WsEndpointHandler for ForwardingHandler {
 
     fn parse_frame(
         &mut self,
-        frame: &shared_ws::core::WsFrame,
+        frame: &shared_ws::ws::WsFrame,
     ) -> Result<WsParseOutcome<Self::Message>, Self::Error> {
         self.inner.parse_frame(frame)
     }
@@ -184,7 +184,10 @@ pub struct DeribitOptionsActorArgs {
 }
 
 impl DeribitOptionsActorArgs {
-    pub fn test_defaults(url: String, instruments_provider: Arc<dyn DeribitInstrumentsProvider>) -> Self {
+    pub fn test_defaults(
+        url: String,
+        instruments_provider: Arc<dyn DeribitInstrumentsProvider>,
+    ) -> Self {
         Self {
             url,
             tls: WsTlsConfig::default(),
@@ -205,7 +208,15 @@ impl DeribitOptionsActorArgs {
 
 pub struct DeribitOptionsActor {
     args: DeribitOptionsActorArgs,
-    ws: ActorRef<WebSocketActor<ForwardingHandler, DeribitReconnect, ProtocolPingPong, ForwardAllIngress<DeribitEvent>, TungsteniteTransport>>,
+    ws: ActorRef<
+        WebSocketActor<
+            ForwardingHandler,
+            DeribitReconnect,
+            ProtocolPingPong,
+            ForwardAllIngress<DeribitEvent>,
+            TungsteniteTransport,
+        >,
+    >,
     metrics: Arc<ForwardMetrics>,
     sink_tx: watch::Sender<Option<mpsc::Sender<DeribitEvent>>>,
     forward_task: Option<tokio::task::JoinHandle<()>>,
@@ -236,8 +247,6 @@ impl DeribitOptionsActor {
             stale_threshold: args.stale_threshold,
             ws_buffers: args.ws_buffers,
             outbound_capacity: args.outbound_capacity,
-            global_rate_limit: None,
-            rate_limiter: None,
             circuit_breaker: None,
             latency_policy: None,
             payload_latency_sampling: None,
@@ -345,7 +354,10 @@ impl DeribitOptionsActor {
             if !inst.is_active || !inst.is_option() {
                 continue;
             }
-            channels.push(ticker_channel(&inst.instrument_name, &self.args.ticker_interval));
+            channels.push(ticker_channel(
+                &inst.instrument_name,
+                &self.args.ticker_interval,
+            ));
         }
 
         // Always include perpetual ticker (funding rate) for this currency.
