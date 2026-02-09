@@ -167,9 +167,16 @@ async fn deribit_wss_subscribe_then_place_order_confirmed() {
                     Some("public/subscribe") => {
                         let id = id.expect("subscribe request should include id");
                         assert!(text.contains(channel), "subscribe should include channel");
-                        debug!(subscribe_id = id, "acking deribit subscribe + sending one notification");
+                        debug!(
+                            subscribe_id = id,
+                            "acking deribit subscribe + sending one notification"
+                        );
                         server.send_text(deribit_subscribe_ack(id, &[channel]));
-                        server.send_text(deribit_ticker_notification(channel, 1700000000000, 100.0));
+                        server.send_text(deribit_ticker_notification(
+                            channel,
+                            1700000000000,
+                            100.0,
+                        ));
                         saw_subscribe = true;
                     }
                     _ => {}
@@ -247,4 +254,3 @@ async fn deribit_wss_subscribe_then_place_order_confirmed() {
     assert_eq!(ok.request_id, request_id);
     assert!(ok.rate_limit_feedback.is_none());
 }
-

@@ -144,7 +144,10 @@ async fn deribit_wss_connects_subscribes_and_receives_stream_data() {
                 if method.as_deref() == Some("public/subscribe") {
                     let id = id.expect("subscribe request should include id");
                     assert!(text.contains(channel), "subscribe should include channel");
-                    debug!(subscribe_id = id, "sending deribit subscribe ack + notifications");
+                    debug!(
+                        subscribe_id = id,
+                        "sending deribit subscribe ack + notifications"
+                    );
                     break id;
                 }
             }
@@ -168,7 +171,10 @@ async fn deribit_wss_connects_subscribes_and_receives_stream_data() {
             .unwrap()
             .expect("event channel closed");
         match evt {
-            DeribitEvent::Subscription { channel: ch, payload } => {
+            DeribitEvent::Subscription {
+                channel: ch,
+                payload,
+            } => {
                 assert_eq!(ch.0, channel);
                 let s = std::str::from_utf8(payload.as_ref()).unwrap();
                 assert!(s.contains("\"method\":\"subscription\""));
@@ -177,4 +183,3 @@ async fn deribit_wss_connects_subscribes_and_receives_stream_data() {
         }
     }
 }
-

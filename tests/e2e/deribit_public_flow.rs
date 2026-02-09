@@ -145,7 +145,10 @@ async fn deribit_sends_subscribe_on_connect_and_parses_subscription_notification
         .wait_frame(Duration::from_secs(2), Some(conn_id))
         .await;
     assert!(
-        matches!(subscribe.kind, WsMockFrameKind::Text | WsMockFrameKind::Binary),
+        matches!(
+            subscribe.kind,
+            WsMockFrameKind::Text | WsMockFrameKind::Binary
+        ),
         "unexpected subscribe frame kind: {:?}",
         subscribe.kind
     );
@@ -184,9 +187,8 @@ async fn deribit_parses_platform_state_subscription_notification() {
     let mut server = spawn_deribit_server().await;
     let addr = server.addr;
 
-    let subs = DeribitSubscriptionManager::with_initial_channels([DeribitChannel::from(
-        "platform_state",
-    )]);
+    let subs =
+        DeribitSubscriptionManager::with_initial_channels([DeribitChannel::from("platform_state")]);
     let handler = DeribitPublicHandler::new(subs);
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let handler = CapturingHandler::new(handler, event_tx);

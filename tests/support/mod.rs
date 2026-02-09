@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-pub mod ws_mock;
 pub mod deribit_messages;
+pub mod ws_mock;
 
 pub fn init_tracing() {
     use std::sync::OnceLock;

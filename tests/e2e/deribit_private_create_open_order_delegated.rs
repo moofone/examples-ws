@@ -328,10 +328,7 @@ async fn deribit_create_open_order_times_out_unconfirmed_when_server_never_repli
     let err = res.expect_err("expected unconfirmed timeout");
     match err {
         kameo::error::SendError::HandlerError(msg) => {
-            assert!(
-                msg.contains("Unconfirmed"),
-                "unexpected error: {msg}"
-            );
+            assert!(msg.contains("Unconfirmed"), "unexpected error: {msg}");
         }
         other => panic!("expected HandlerError(String), got {other:?}"),
     }
@@ -421,8 +418,8 @@ async fn deribit_create_open_order_times_out_unconfirmed_when_auth_never_replies
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn deribit_create_open_order_times_out_unconfirmed_when_buy_reply_is_delayed_past_deadline_over_wss(
-) {
+async fn deribit_create_open_order_times_out_unconfirmed_when_buy_reply_is_delayed_past_deadline_over_wss()
+ {
     crate::support::init_tracing();
 
     let (handle, mut events) = spawn_deribit_mock_wss().await;

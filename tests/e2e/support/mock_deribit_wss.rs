@@ -69,8 +69,7 @@ impl DeribitMockWssHandle {
     }
 }
 
-pub async fn spawn_deribit_mock_wss(
-) -> (
+pub async fn spawn_deribit_mock_wss() -> (
     DeribitMockWssHandle,
     mpsc::UnboundedReceiver<DeribitServerEvent>,
 ) {
@@ -79,18 +78,16 @@ pub async fn spawn_deribit_mock_wss(
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
-    let CertifiedKey { cert, key_pair } = rcgen::generate_simple_self_signed(vec![
-        "localhost".to_string(),
-        "127.0.0.1".to_string(),
-    ])
-    .unwrap();
+    let CertifiedKey { cert, key_pair } =
+        rcgen::generate_simple_self_signed(vec!["localhost".to_string(), "127.0.0.1".to_string()])
+            .unwrap();
     let cert_der = cert.der().to_vec();
     let key_der = key_pair.serialize_der();
 
     let cert_chain = vec![rustls::pki_types::CertificateDer::from(cert_der.clone())];
-    let key = rustls::pki_types::PrivateKeyDer::from(
-        rustls::pki_types::PrivatePkcs8KeyDer::from(key_der),
-    );
+    let key = rustls::pki_types::PrivateKeyDer::from(rustls::pki_types::PrivatePkcs8KeyDer::from(
+        key_der,
+    ));
 
     let server_cfg = rustls::ServerConfig::builder()
         .with_no_client_auth()
@@ -256,4 +253,3 @@ pub fn deribit_buy_ok(id: u64, creation_ts_ms: i64) -> String {
         creation_ts_ms = creation_ts_ms,
     )
 }
-

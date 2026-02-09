@@ -50,10 +50,22 @@ pub enum WsMockEvent {
 
 #[derive(Debug, Clone)]
 pub enum WsMockCmd {
-    SendText { conn_id: usize, text: String },
-    SendBinary { conn_id: usize, bytes: Bytes },
-    SendPing { conn_id: usize, bytes: Bytes },
-    SendPong { conn_id: usize, bytes: Bytes },
+    SendText {
+        conn_id: usize,
+        text: String,
+    },
+    SendBinary {
+        conn_id: usize,
+        bytes: Bytes,
+    },
+    SendPing {
+        conn_id: usize,
+        bytes: Bytes,
+    },
+    SendPong {
+        conn_id: usize,
+        bytes: Bytes,
+    },
     /// Websocket close handshake (optional code/reason).
     Close {
         conn_id: usize,
@@ -61,7 +73,9 @@ pub enum WsMockCmd {
         reason: Option<Bytes>,
     },
     /// Drop the connection without a close handshake.
-    Drop { conn_id: usize },
+    Drop {
+        conn_id: usize,
+    },
 }
 
 #[derive(Clone)]
@@ -116,12 +130,17 @@ impl WsMockServer {
             let next_id = next_id.clone();
             async move {
                 loop {
-                    let Ok((stream, _)) = listener.accept().await else { break };
+                    let Ok((stream, _)) = listener.accept().await else {
+                        break;
+                    };
 
                     let conn_id = next_id.fetch_add(1, Ordering::Relaxed).saturating_add(1);
 
                     let (conn_cmd_tx, mut conn_cmd_rx) = mpsc::unbounded_channel::<WsMockCmd>();
-                    conns.lock().await.insert(conn_id, ConnCmdTx { tx: conn_cmd_tx });
+                    conns
+                        .lock()
+                        .await
+                        .insert(conn_id, ConnCmdTx { tx: conn_cmd_tx });
 
                     let evt_tx2 = evt_tx.clone();
                     let conns2 = conns.clone();
@@ -246,11 +265,7 @@ impl WsMockServer {
         }
     }
 
-    pub async fn wait_frame(
-        &mut self,
-        timeout: Duration,
-        conn_id: Option<usize>,
-    ) -> WsMockFrame {
+    pub async fn wait_frame(&mut self, timeout: Duration, conn_id: Option<usize>) -> WsMockFrame {
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
@@ -259,7 +274,10 @@ impl WsMockServer {
                 .unwrap_or(None)
                 .unwrap_or_else(|| panic!("timed out waiting for server frame"));
             match evt {
-                WsMockEvent::Frame { conn_id: got, frame } => {
+                WsMockEvent::Frame {
+                    conn_id: got,
+                    frame,
+                } => {
                     if conn_id.map(|c| c == got).unwrap_or(true) {
                         return frame;
                     }

@@ -208,7 +208,9 @@ async fn spawn_sink_server() -> SocketAddr {
             tokio::spawn(async move {
                 let mut ws = accept_async(stream).await.unwrap();
                 while let Some(msg) = ws.next().await {
-                    let Ok(frame) = msg else { break; };
+                    let Ok(frame) = msg else {
+                        break;
+                    };
                     match frame {
                         WsFrame::Text(_) | WsFrame::Binary(_) => {}
                         WsFrame::Ping(_) | WsFrame::Pong(_) => {}
@@ -513,9 +515,7 @@ async fn delegated_payload_mismatch_is_rejected_while_original_request_still_com
     let (done_tx, mut done_rx) = tokio::sync::oneshot::channel();
     let a2 = actor.clone();
     tokio::spawn(async move {
-        let outbound = format!(
-            "{{\"jsonrpc\":\"2.0\",\"id\":{request_id},\"method\":\"do\"}}"
-        );
+        let outbound = format!("{{\"jsonrpc\":\"2.0\",\"id\":{request_id},\"method\":\"do\"}}");
         let res = a2
             .ask(WsDelegatedRequest {
                 request_id,
@@ -549,7 +549,9 @@ async fn delegated_payload_mismatch_is_rejected_while_original_request_still_com
         .expect_err("expected payload mismatch");
 
     match err {
-        kameo::error::SendError::HandlerError(WsDelegatedError::PayloadMismatch { request_id: got }) => {
+        kameo::error::SendError::HandlerError(WsDelegatedError::PayloadMismatch {
+            request_id: got,
+        }) => {
             assert_eq!(got, request_id);
         }
         other => panic!("expected PayloadMismatch handler error, got {other:?}"),
@@ -612,7 +614,9 @@ async fn delegated_too_many_pending_is_surfaced() {
             // Most requests will remain pending (we timed out waiting for confirmation).
             Err(_) => {}
             Ok(Ok(_)) => panic!("unexpected Ok for a server that never confirms"),
-            Ok(Err(kameo::error::SendError::HandlerError(WsDelegatedError::TooManyPending { max }))) => {
+            Ok(Err(kameo::error::SendError::HandlerError(WsDelegatedError::TooManyPending {
+                max,
+            }))) => {
                 got_too_many = Some((request_id, max));
                 break;
             }

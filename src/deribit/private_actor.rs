@@ -232,8 +232,8 @@ impl DeribitPrivateActor {
             debug!(
                 request_id,
                 fingerprint,
-                direction="client->server",
-                bytes=payload.len(),
+                direction = "client->server",
+                bytes = payload.len(),
                 "deribit private: ws delegated request (binary)"
             );
         }
@@ -282,11 +282,7 @@ impl DeribitPrivateActor {
         };
 
         // `commit` treats Outcome::NotSent as a defensive refund for fixed-window and token bucket.
-        debug!(
-            request_id,
-            ?outcome,
-            "deribit private: rate limiter commit"
-        );
+        debug!(request_id, ?outcome, "deribit private: rate limiter commit");
         self.limiter.commit(permit, outcome, self.limiter_now());
 
         // Surface the delegated result as our API error.
@@ -389,7 +385,7 @@ impl KameoMessage<CreateOpenOrder> for DeribitPrivateActor {
         if !self.authenticated {
             let auth_id = self.alloc_request_id();
             let payload = self.build_auth_request(auth_id);
-            debug!(request_id=auth_id, "deribit private: sending auth");
+            debug!(request_id = auth_id, "deribit private: sending auth");
             self.send_jsonrpc_confirmed(auth_id, payload, self.args.auth_cost)
                 .await?;
             self.authenticated = true;
@@ -397,7 +393,10 @@ impl KameoMessage<CreateOpenOrder> for DeribitPrivateActor {
 
         let order_id = self.alloc_request_id();
         let payload = self.build_buy_request(order_id, &msg.instrument, msg.amount, msg.price);
-        debug!(request_id=order_id, "deribit private: sending private/buy");
+        debug!(
+            request_id = order_id,
+            "deribit private: sending private/buy"
+        );
         self.send_jsonrpc_confirmed(order_id, payload, self.args.order_cost)
             .await?;
 
