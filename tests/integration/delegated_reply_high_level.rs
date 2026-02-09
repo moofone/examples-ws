@@ -196,6 +196,32 @@ async fn spawn_jsonrpc_server(mode: ServerMode) -> (SocketAddr, mpsc::UnboundedR
     (addr, rx)
 }
 
+async fn spawn_sink_server() -> SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        loop {
+            let Ok((stream, _)) = listener.accept().await else {
+                break;
+            };
+            tokio::spawn(async move {
+                let mut ws = accept_async(stream).await.unwrap();
+                while let Some(msg) = ws.next().await {
+                    let Ok(frame) = msg else { break; };
+                    match frame {
+                        WsFrame::Text(_) | WsFrame::Binary(_) => {}
+                        WsFrame::Ping(_) | WsFrame::Pong(_) => {}
+                        WsFrame::Close(_) => break,
+                    }
+                }
+            });
+        }
+    });
+
+    addr
+}
+
 async fn wait_connected<E, R, P, I, T>(
     actor: &kameo::prelude::ActorRef<WebSocketActor<E, R, P, I, T>>,
     timeout: Duration,
@@ -449,4 +475,152 @@ async fn delegated_not_delivered_when_writer_not_ready() {
         }) => assert_eq!(got, request_id),
         other => panic!("expected NotDelivered handler error, got {other:?}"),
     }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delegated_payload_mismatch_is_rejected_while_original_request_still_completes() {
+    let (addr, mut server_rx) = spawn_jsonrpc_server(ServerMode::ConfirmOk {
+        delay: Duration::from_millis(200),
+    })
+    .await;
+
+    let actor = WebSocketActor::spawn(WebSocketActorArgs {
+        url: format!("ws://{}", addr),
+        tls: WsTlsConfig::default(),
+        transport: TungsteniteTransport::default(),
+        reconnect_strategy: NoReconnect,
+        handler: JsonRpcMatcherHandler::new(),
+        ingress: ForwardAllIngress::default(),
+        ping_strategy: ProtocolPingPong::new(Duration::from_secs(60), Duration::from_secs(60)),
+        enable_ping: false,
+        stale_threshold: Duration::from_secs(60),
+        ws_buffers: WebSocketBufferConfig::default(),
+        outbound_capacity: 32,
+        circuit_breaker: None,
+        latency_policy: None,
+        payload_latency_sampling: None,
+        registration: None,
+        metrics: None,
+    });
+
+    actor.tell(WebSocketEvent::Connect).send().await.unwrap();
+    wait_connected(&actor, Duration::from_secs(2)).await;
+
+    let request_id = 999u64;
+    let deadline = Instant::now() + Duration::from_secs(2);
+
+    // First request: will be sent and confirmed after the server delay.
+    let (done_tx, mut done_rx) = tokio::sync::oneshot::channel();
+    let a2 = actor.clone();
+    tokio::spawn(async move {
+        let outbound = format!(
+            "{{\"jsonrpc\":\"2.0\",\"id\":{request_id},\"method\":\"do\"}}"
+        );
+        let res = a2
+            .ask(WsDelegatedRequest {
+                request_id,
+                fingerprint: 111,
+                frame: into_ws_message(outbound),
+                confirm_deadline: deadline,
+                confirm_mode: WsConfirmMode::Confirmed,
+            })
+            .await;
+        let _ = done_tx.send(res);
+    });
+
+    // Ensure the original request is in-flight (server observed the outbound frame)
+    // before issuing the mismatched join.
+    let _ = tokio::time::timeout(Duration::from_secs(2), server_rx.recv())
+        .await
+        .unwrap()
+        .expect("server channel closed");
+
+    // Second request: same request_id but different fingerprint => PayloadMismatch.
+    let outbound2 = format!("{{\"jsonrpc\":\"2.0\",\"id\":{request_id},\"method\":\"do2\"}}");
+    let err = actor
+        .ask(WsDelegatedRequest {
+            request_id,
+            fingerprint: 222,
+            frame: into_ws_message(outbound2),
+            confirm_deadline: deadline,
+            confirm_mode: WsConfirmMode::Confirmed,
+        })
+        .await
+        .expect_err("expected payload mismatch");
+
+    match err {
+        kameo::error::SendError::HandlerError(WsDelegatedError::PayloadMismatch { request_id: got }) => {
+            assert_eq!(got, request_id);
+        }
+        other => panic!("expected PayloadMismatch handler error, got {other:?}"),
+    }
+
+    // Original request still confirms successfully.
+    let ok = tokio::time::timeout(Duration::from_secs(2), &mut done_rx)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_confirmed_ok(ok, request_id);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delegated_too_many_pending_is_surfaced() {
+    // Server accepts the socket and drains frames but never replies, so requests remain pending.
+    let addr = spawn_sink_server().await;
+
+    let actor = WebSocketActor::spawn(WebSocketActorArgs {
+        url: format!("ws://{}", addr),
+        tls: WsTlsConfig::default(),
+        transport: TungsteniteTransport::default(),
+        reconnect_strategy: NoReconnect,
+        handler: JsonRpcMatcherHandler::new(),
+        ingress: ForwardAllIngress::default(),
+        ping_strategy: ProtocolPingPong::new(Duration::from_secs(60), Duration::from_secs(60)),
+        enable_ping: false,
+        stale_threshold: Duration::from_secs(60),
+        ws_buffers: WebSocketBufferConfig::default(),
+        outbound_capacity: 32,
+        circuit_breaker: None,
+        latency_policy: None,
+        payload_latency_sampling: None,
+        registration: None,
+        metrics: None,
+    });
+
+    actor.tell(WebSocketEvent::Connect).send().await.unwrap();
+    wait_connected(&actor, Duration::from_secs(2)).await;
+
+    // Fill the pending table until the actor starts rejecting new ids.
+    let mut got_too_many = None::<(u64, usize)>;
+    for i in 0..5000u64 {
+        let request_id = 10_000 + i;
+        let outbound = format!("{{\"jsonrpc\":\"2.0\",\"id\":{request_id},\"method\":\"do\"}}");
+        let res = tokio::time::timeout(
+            Duration::from_millis(1),
+            actor.ask(WsDelegatedRequest {
+                request_id,
+                fingerprint: request_id,
+                frame: into_ws_message(outbound),
+                confirm_deadline: Instant::now() + Duration::from_secs(60),
+                confirm_mode: WsConfirmMode::Confirmed,
+            }),
+        )
+        .await;
+
+        match res {
+            // Most requests will remain pending (we timed out waiting for confirmation).
+            Err(_) => {}
+            Ok(Ok(_)) => panic!("unexpected Ok for a server that never confirms"),
+            Ok(Err(kameo::error::SendError::HandlerError(WsDelegatedError::TooManyPending { max }))) => {
+                got_too_many = Some((request_id, max));
+                break;
+            }
+            Ok(Err(other)) => panic!("expected TooManyPending or timeout, got {other:?}"),
+        }
+    }
+
+    let (request_id, max) = got_too_many.expect("did not hit TooManyPending within limit");
+    assert!(max > 0);
+    assert!(request_id >= 10_000);
 }

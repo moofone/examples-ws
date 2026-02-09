@@ -17,6 +17,7 @@ use shared_ws::ws::{
     WebSocketBufferConfig, WebSocketEvent, WsConfirmMode, WsConnectionStatus, WsDelegatedError,
     WsDelegatedRequest, WsTlsConfig, into_ws_message,
 };
+use tracing::debug;
 
 use crate::endpoints::deribit_private::DeribitJsonRpcMatcher;
 
@@ -32,6 +33,8 @@ pub struct DeribitAuthConfig {
 pub struct DeribitPrivateActorArgs {
     pub url: String,
     pub tls: WsTlsConfig,
+    /// WebSocket transport implementation/config (used for TLS connector customization in tests).
+    pub transport: TungsteniteTransport,
     pub stale_threshold: Duration,
     pub enable_ping: bool,
     pub ping_interval: Duration,
@@ -55,6 +58,7 @@ impl DeribitPrivateActorArgs {
         Self {
             url,
             tls: WsTlsConfig::default(),
+            transport: TungsteniteTransport::default(),
             stale_threshold: Duration::from_secs(30),
             enable_ping: false,
             ping_interval: Duration::from_secs(60),
@@ -204,12 +208,35 @@ impl DeribitPrivateActor {
         };
 
         let now = self.limiter_now();
+        debug!(
+            request_id,
+            cost = cost.get(),
+            now_ms = now.as_millis() as u64,
+            "deribit private: rate limiter try_acquire"
+        );
         let permit = self
             .limiter
             .try_acquire(self.args.rate_limiter_key, cost, now)
             .map_err(|deny| format!("locally rate limited: retry_after={:?}", deny.retry_after))?;
 
         let fingerprint = Self::fingerprint(payload.as_slice());
+        if let Ok(text) = std::str::from_utf8(payload.as_slice()) {
+            debug!(
+                request_id,
+                fingerprint,
+                direction="client->server",
+                text=%text,
+                "deribit private: ws delegated request"
+            );
+        } else {
+            debug!(
+                request_id,
+                fingerprint,
+                direction="client->server",
+                bytes=payload.len(),
+                "deribit private: ws delegated request (binary)"
+            );
+        }
         let req = WsDelegatedRequest {
             request_id,
             fingerprint,
@@ -219,6 +246,28 @@ impl DeribitPrivateActor {
         };
 
         let res = self.ws.ask(req).await;
+        match &res {
+            Ok(ok) => {
+                debug!(
+                    request_id,
+                    confirmed = ok.confirmed,
+                    "deribit private: ws ask() received response"
+                );
+            }
+            Err(err) => {
+                debug!(
+                    request_id,
+                    err = ?err,
+                    "deribit private: ws ask() received error"
+                );
+            }
+        }
+        debug!(
+            request_id,
+            ok_confirmed = res.as_ref().ok().map(|o| o.confirmed),
+            is_err = res.is_err(),
+            "deribit private: delegated reply result"
+        );
 
         let outcome = match &res {
             Ok(ok) => {
@@ -233,6 +282,11 @@ impl DeribitPrivateActor {
         };
 
         // `commit` treats Outcome::NotSent as a defensive refund for fixed-window and token bucket.
+        debug!(
+            request_id,
+            ?outcome,
+            "deribit private: rate limiter commit"
+        );
         self.limiter.commit(permit, outcome, self.limiter_now());
 
         // Surface the delegated result as our API error.
@@ -278,7 +332,7 @@ impl Actor for DeribitPrivateActor {
         let ws = WebSocketActor::spawn(WebSocketActorArgs {
             url: args.url.clone(),
             tls: args.tls,
-            transport: TungsteniteTransport::default(),
+            transport: args.transport.clone(),
             reconnect_strategy: args.reconnect.clone(),
             handler: DeribitJsonRpcMatcher::new(),
             ingress: ForwardAllIngress::default(),
@@ -324,11 +378,18 @@ impl KameoMessage<CreateOpenOrder> for DeribitPrivateActor {
         msg: CreateOpenOrder,
         _ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
+        debug!(
+            instrument=%msg.instrument,
+            amount=msg.amount,
+            price=msg.price,
+            "deribit private: CreateOpenOrder"
+        );
         self.ensure_connected(self.args.request_timeout).await?;
 
         if !self.authenticated {
             let auth_id = self.alloc_request_id();
             let payload = self.build_auth_request(auth_id);
+            debug!(request_id=auth_id, "deribit private: sending auth");
             self.send_jsonrpc_confirmed(auth_id, payload, self.args.auth_cost)
                 .await?;
             self.authenticated = true;
@@ -336,6 +397,7 @@ impl KameoMessage<CreateOpenOrder> for DeribitPrivateActor {
 
         let order_id = self.alloc_request_id();
         let payload = self.build_buy_request(order_id, &msg.instrument, msg.amount, msg.price);
+        debug!(request_id=order_id, "deribit private: sending private/buy");
         self.send_jsonrpc_confirmed(order_id, payload, self.args.order_cost)
             .await?;
 

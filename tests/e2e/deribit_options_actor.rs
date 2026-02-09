@@ -1,58 +1,18 @@
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use bytes::Bytes;
 use examples_ws::deribit::instruments::{DeribitInstrument, DeribitInstrumentsProvider};
 use examples_ws::deribit::options_actor::{
     Connect, DeribitOptionsActor, DeribitOptionsActorArgs, SubscribeCurrencies,
 };
 use futures_util::future::BoxFuture;
 use kameo::Actor;
-use shared_ws::client::accept_async;
 use shared_ws::ws::WsTlsConfig;
-use tokio::net::TcpListener;
-use tokio::sync::mpsc;
 
-#[derive(Debug)]
-enum ServerEvent {
-    Connected,
-    Data(Bytes),
-}
+use crate::support::ws_mock::{WsMockFrameKind, WsMockServer};
 
-async fn spawn_ws_server() -> (SocketAddr, mpsc::UnboundedReceiver<ServerEvent>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let (tx, rx) = mpsc::unbounded_channel();
-
-    tokio::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                break;
-            };
-            let tx = tx.clone();
-            tokio::spawn(async move {
-                let mut ws = accept_async(stream).await.unwrap();
-                let _ = tx.send(ServerEvent::Connected);
-
-                while let Some(msg) = ws.next().await {
-                    match msg {
-                        Ok(shared_ws::ws::WsFrame::Text(text)) => {
-                            let _ = tx.send(ServerEvent::Data(text.into_bytes()));
-                        }
-                        Ok(shared_ws::ws::WsFrame::Binary(bytes)) => {
-                            let _ = tx.send(ServerEvent::Data(bytes));
-                        }
-                        Ok(shared_ws::ws::WsFrame::Close(_)) => break,
-                        Err(_) => break,
-                        _ => {}
-                    }
-                }
-            });
-        }
-    });
-
-    (addr, rx)
+async fn spawn_ws_server() -> WsMockServer {
+    WsMockServer::spawn().await
 }
 
 #[derive(Clone)]
@@ -94,7 +54,8 @@ impl DeribitInstrumentsProvider for MockInstruments {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn options_actor_subscribe_currencies_emits_expected_channels() {
-    let (addr, mut server_rx) = spawn_ws_server().await;
+    let mut server = spawn_ws_server().await;
+    let addr = server.addr;
 
     let provider: Arc<dyn DeribitInstrumentsProvider> = Arc::new(MockInstruments);
     let args = DeribitOptionsActorArgs {
@@ -119,14 +80,7 @@ async fn options_actor_subscribe_currencies_emits_expected_channels() {
     actor.ask(Connect).await.unwrap();
 
     // Wait for connect.
-    loop {
-        match tokio::time::timeout(Duration::from_secs(2), server_rx.recv()).await {
-            Ok(Some(ServerEvent::Connected)) => break,
-            Ok(Some(_)) => {}
-            Ok(None) => panic!("server channel closed"),
-            Err(_) => panic!("timeout waiting for server connect"),
-        }
-    }
+    let _conn_id = server.wait_connected(Duration::from_secs(2)).await;
 
     actor
         .ask(SubscribeCurrencies {
@@ -136,14 +90,13 @@ async fn options_actor_subscribe_currencies_emits_expected_channels() {
         .unwrap();
 
     // The next message should include the generated public/subscribe request.
-    let bytes = loop {
-        match tokio::time::timeout(Duration::from_secs(2), server_rx.recv()).await {
-            Ok(Some(ServerEvent::Data(bytes))) => break bytes,
-            Ok(Some(_)) => {}
-            Ok(None) => panic!("server channel closed"),
-            Err(_) => panic!("timeout waiting for subscribe payload"),
-        }
-    };
+    let frame = server.wait_frame(Duration::from_secs(2), None).await;
+    assert!(
+        matches!(frame.kind, WsMockFrameKind::Text | WsMockFrameKind::Binary),
+        "unexpected frame kind: {:?}",
+        frame.kind
+    );
+    let bytes = frame.bytes;
 
     let s = std::str::from_utf8(bytes.as_ref()).unwrap();
     assert!(s.contains("\"method\":\"public/subscribe\""), "payload={s}");
