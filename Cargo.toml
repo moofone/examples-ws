@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-shared-ws = { path = "../shared-ws" }
-shared-rate_limiter = { path = "../shared-rate_limiter" }
+shared-ws = { git = "https://github.com/moofone/shared-ws" }
+shared-rate_limiter = { git = "https://github.com/moofone/shared-rate_limiter" }
 bytes = "1.6"
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 kameo = { git = "https://github.com/moofone/kameo", features = ["remote"] }
