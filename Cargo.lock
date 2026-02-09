@@ -1502,12 +1502,12 @@ dependencies = [
 [[package]]
 name = "shared-rate_limiter"
 version = "0.1.0"
-source = "git+https://github.com/moofone/shared-rate_limiter#ddb3dea2e06946697a28af5ed71f8bb29007cc1e"
+source = "git+https://github.com/moofone/shared-rate_limiter#28e81fbe45d31574ef113cab4c9dd2b1344d1150"
 
 [[package]]
 name = "shared-ws"
 version = "0.1.0"
-source = "git+https://github.com/moofone/shared-ws#07a6c9a3c45a9cb2633fb6cdd32f26ba4d7efa8b"
+source = "git+https://github.com/moofone/shared-ws#c57d1c8c4b07122ae329b638ace1e15b5ed0593c"
 dependencies = [
  "anyhow",
  "bytes",
