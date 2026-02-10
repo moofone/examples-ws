@@ -233,17 +233,7 @@ impl DeribitPublicActorArgs {
 
 pub struct DeribitPublicActor {
     args: DeribitPublicActorArgs,
-    ws: Option<
-        ActorRef<
-            WebSocketActor<
-                ForwardingHandler,
-                DeribitReconnect,
-                ProtocolPingPong,
-                ForwardAllIngress<DeribitEvent>,
-                TungsteniteTransport,
-            >,
-        >,
-    >,
+    ws: Option<DeribitWsActorRef>,
     on_open: Arc<Notify>,
     metrics: Arc<ForwardMetrics>,
     sink_tx: watch::Sender<Option<mpsc::Sender<DeribitEvent>>>,
@@ -254,6 +244,15 @@ pub struct DeribitPublicActor {
     expiry_task: Option<tokio::task::JoinHandle<()>>,
     forward_task: Option<tokio::task::JoinHandle<()>>,
 }
+
+type DeribitWsActor = WebSocketActor<
+    ForwardingHandler,
+    DeribitReconnect,
+    ProtocolPingPong,
+    ForwardAllIngress<DeribitEvent>,
+    TungsteniteTransport,
+>;
+type DeribitWsActorRef = ActorRef<DeribitWsActor>;
 
 impl DeribitPublicActor {
     pub fn new(args: DeribitPublicActorArgs) -> Self {
@@ -394,10 +393,10 @@ async fn refresh_currency_expiries(
             continue;
         };
         let date = utc_date_from_unix_ms(ts);
-        if let Some(today) = today {
-            if date <= today {
-                continue;
-            }
+        if let Some(today) = today
+            && date <= today
+        {
+            continue;
         }
         expiries.insert(date);
     }

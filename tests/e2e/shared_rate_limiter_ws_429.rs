@@ -118,7 +118,7 @@ impl WsEndpointHandler for DeribitRateLimitMatcher {
                 .and_then(|v| v.as_i64());
             let message = sonic_rs::get(data, &["error", "message"])
                 .ok()
-                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .and_then(|v| v.as_str().map(ToOwned::to_owned))
                 .unwrap_or_else(|| "deribit jsonrpc error".to_string());
 
             let mut msg = message;

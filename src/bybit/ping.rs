@@ -48,20 +48,26 @@ fn build_ping_json(req_id_field: Option<BybitReqIdField>, req_id: Option<&str>) 
 }
 
 fn parse_bybit_pong_key(payload: &Bytes) -> Option<(bool, Option<String>)> {
-    let Ok(value) = sonic_rs::from_slice::<sonic_rs::Value>(payload.as_ref()) else {
-        return None;
-    };
-
-    let op = value.get("op").and_then(|v| v.as_str())?;
+    // Use lazy field access to avoid building a DOM for every inbound frame.
+    let bytes = payload.as_ref();
+    let op_v = sonic_rs::get(bytes, &["op"]).ok()?;
+    let op = op_v.as_str()?;
     if !op.eq_ignore_ascii_case("pong") {
         return None;
     }
 
-    let req = value
-        .get("reqId")
-        .or_else(|| value.get("req_id"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+    let mut req: Option<String> = None;
+    if let Ok(v) = sonic_rs::get(bytes, &["reqId"])
+        && let Some(s) = v.as_str()
+    {
+        req = Some(s.to_owned());
+    }
+    if req.is_none()
+        && let Ok(v) = sonic_rs::get(bytes, &["req_id"])
+        && let Some(s) = v.as_str()
+    {
+        req = Some(s.to_owned());
+    }
 
     Some((true, req))
 }
@@ -70,11 +76,11 @@ fn parse_bybit_pong_key(payload: &Bytes) -> Option<(bool, Option<String>)> {
 ///
 /// This is a convenience wrapper around [`WsApplicationPingPong`] with Bybit-specific defaults.
 pub struct BybitJsonPingPong {
-    inner: WsApplicationPingPong<
-        Box<dyn Fn() -> (Bytes, String) + Send + Sync>,
-        Box<dyn Fn(&Bytes) -> Option<String> + Send + Sync>,
-    >,
+    inner: WsApplicationPingPong<PingCreateFn, PongParseFn>,
 }
+
+type PingCreateFn = Box<dyn Fn() -> (Bytes, String) + Send + Sync>;
+type PongParseFn = Box<dyn Fn(&Bytes) -> Option<String> + Send + Sync>;
 
 impl BybitJsonPingPong {
     /// Public-channel default: fixed key (`"public_pong"`) and `reqId` field.
@@ -95,20 +101,14 @@ impl BybitJsonPingPong {
         let counter = Arc::new(AtomicU64::new(1));
         let counter_clone = counter.clone();
 
-        let create: Box<dyn Fn() -> (Bytes, String) + Send + Sync> = Box::new(move || {
+        let create: PingCreateFn = Box::new(move || {
             let id = counter_clone.fetch_add(1, Ordering::Relaxed);
             let key = format!("ping_{id}");
             let payload = build_ping_json(Some(BybitReqIdField::ReqId), Some(&key));
             (payload, key)
         });
 
-        let parse: Box<dyn Fn(&Bytes) -> Option<String> + Send + Sync> =
-            Box::new(move |payload: &Bytes| {
-                let Some((_is_pong, req)) = parse_bybit_pong_key(payload) else {
-                    return None;
-                };
-                req
-            });
+        let parse: PongParseFn = Box::new(move |payload: &Bytes| parse_bybit_pong_key(payload)?.1);
 
         Self {
             inner: WsApplicationPingPong::new(interval, timeout, create, parse).with_max_pending(8),
@@ -122,20 +122,14 @@ impl BybitJsonPingPong {
         req_id_field: BybitReqIdField,
         key: &'static str,
     ) -> Self {
-        let create: Box<dyn Fn() -> (Bytes, String) + Send + Sync> = Box::new(move || {
+        let create: PingCreateFn = Box::new(move || {
             let payload = build_ping_json(Some(req_id_field), Some(key));
             (payload, key.to_string())
         });
-        let parse: Box<dyn Fn(&Bytes) -> Option<String> + Send + Sync> =
-            Box::new(move |payload: &Bytes| {
-                let Some((is_pong, req)) = parse_bybit_pong_key(payload) else {
-                    return None;
-                };
-                if !is_pong {
-                    return None;
-                }
-                Some(req.unwrap_or_else(|| key.to_string()))
-            });
+        let parse: PongParseFn = Box::new(move |payload: &Bytes| {
+            let (is_pong, req) = parse_bybit_pong_key(payload)?;
+            is_pong.then(|| req.unwrap_or_else(|| key.to_string()))
+        });
         Self {
             inner: WsApplicationPingPong::new(interval, timeout, create, parse).with_max_pending(8),
         }
@@ -143,21 +137,16 @@ impl BybitJsonPingPong {
 
     /// Generated-key mode: embed a unique `req_id` and require it to match in the pong.
     pub fn generated(interval: Duration, timeout: Duration) -> Self {
-        let create: Box<dyn Fn() -> (Bytes, String) + Send + Sync> = Box::new(move || {
+        let create: PingCreateFn = Box::new(move || {
             let key = format!("ping_{}", now_epoch_ms_string());
             let payload = build_ping_json(Some(BybitReqIdField::ReqIdSnake), Some(&key));
             (payload, key)
         });
-        let parse: Box<dyn Fn(&Bytes) -> Option<String> + Send + Sync> =
-            Box::new(move |payload: &Bytes| {
-                let Some((is_pong, req)) = parse_bybit_pong_key(payload) else {
-                    return None;
-                };
-                if !is_pong {
-                    return None;
-                }
-                req
-            });
+        let parse: PongParseFn = Box::new(move |payload: &Bytes| {
+            let (is_pong, req) = parse_bybit_pong_key(payload)?;
+            is_pong.then_some(())?;
+            req
+        });
         Self {
             inner: WsApplicationPingPong::new(interval, timeout, create, parse).with_max_pending(8),
         }

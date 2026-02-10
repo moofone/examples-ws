@@ -273,16 +273,13 @@ impl WsMockServer {
                 .await
                 .unwrap_or(None)
                 .unwrap_or_else(|| panic!("timed out waiting for server frame"));
-            match evt {
-                WsMockEvent::Frame {
-                    conn_id: got,
-                    frame,
-                } => {
-                    if conn_id.map(|c| c == got).unwrap_or(true) {
-                        return frame;
-                    }
-                }
-                _ => {}
+            if let WsMockEvent::Frame {
+                conn_id: got,
+                frame,
+            } = evt
+                && conn_id.map(|c| c == got).unwrap_or(true)
+            {
+                return frame;
             }
         }
     }

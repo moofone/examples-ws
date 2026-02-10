@@ -120,7 +120,7 @@ async fn bybit_public_actor_resubscribes_after_server_drop() {
     // Initial subscribe on conn #1.
     let first = loop {
         match tokio::time::timeout(Duration::from_secs(2), server_rx.recv()).await {
-            Ok(Some(ServerEvent::Data { conn_id, bytes })) if conn_id == 1 => break bytes,
+            Ok(Some(ServerEvent::Data { conn_id: 1, bytes })) => break bytes,
             Ok(Some(_)) => {}
             Ok(None) => panic!("server channel closed"),
             Err(_) => panic!("timeout waiting for initial subscribe"),
@@ -143,7 +143,7 @@ async fn bybit_public_actor_resubscribes_after_server_drop() {
 
     let second = loop {
         match tokio::time::timeout(Duration::from_secs(2), server_rx.recv()).await {
-            Ok(Some(ServerEvent::Data { conn_id, bytes })) if conn_id == 1 => break bytes,
+            Ok(Some(ServerEvent::Data { conn_id: 1, bytes })) => break bytes,
             Ok(Some(_)) => {}
             Ok(None) => panic!("server channel closed"),
             Err(_) => panic!("timeout waiting for dynamic subscribe"),
@@ -173,7 +173,7 @@ async fn bybit_public_actor_resubscribes_after_server_drop() {
     // Initial subscribe on conn #2 should include both topics (BTC + dynamically added ETH).
     let third = loop {
         match tokio::time::timeout(Duration::from_secs(2), server_rx.recv()).await {
-            Ok(Some(ServerEvent::Data { conn_id, bytes })) if conn_id == 2 => break bytes,
+            Ok(Some(ServerEvent::Data { conn_id: 2, bytes })) => break bytes,
             Ok(Some(_)) => {}
             Ok(None) => panic!("server channel closed"),
             Err(_) => panic!("timeout waiting for resubscribe on reconnect"),

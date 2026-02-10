@@ -329,30 +329,27 @@ impl WsEndpointHandler for BybitTopicHandler {
         }
 
         // Surface Bybit error frames (`retCode != 0`) so callers can decide fatal vs reconnect.
-        if let Ok(ret_code) = sonic_rs::get(payload, &["retCode"]) {
-            if let Some(code) = ret_code.as_i64() {
-                if code == 0 {
-                    // Not an error; continue parsing.
-                } else {
-                    let message = sonic_rs::get(payload, &["retMsg"])
+        if let Ok(ret_code) = sonic_rs::get(payload, &["retCode"])
+            && let Some(code) = ret_code.as_i64()
+            && code != 0
+        {
+            let message = sonic_rs::get(payload, &["retMsg"])
+                .ok()
+                .and_then(|v| v.as_str().map(ToOwned::to_owned))
+                .or_else(|| {
+                    sonic_rs::get(payload, &["ret_msg"])
                         .ok()
-                        .and_then(|v| v.as_str().map(|s| s.to_string()))
-                        .or_else(|| {
-                            sonic_rs::get(payload, &["ret_msg"])
-                                .ok()
-                                .and_then(|v| v.as_str().map(|s| s.to_string()))
-                        })
-                        .unwrap_or_else(|| "server error".to_string());
+                        .and_then(|v| v.as_str().map(ToOwned::to_owned))
+                })
+                .unwrap_or_else(|| "server error".to_string());
 
-                    // Best-effort: include the parsed JSON so endpoint handlers can inspect it.
-                    let data = sonic_rs::from_slice::<sonic_rs::Value>(payload.as_ref()).ok();
-                    return Ok(WsParseOutcome::ServerError {
-                        code: Some(code as i32),
-                        message,
-                        data,
-                    });
-                }
-            }
+            // Best-effort: include the parsed JSON so endpoint handlers can inspect it.
+            let data = sonic_rs::from_slice::<sonic_rs::Value>(payload.as_ref()).ok();
+            return Ok(WsParseOutcome::ServerError {
+                code: Some(code as i32),
+                message,
+                data,
+            });
         }
 
         // Fast-path: extract `topic` for stream notifications.

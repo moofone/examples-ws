@@ -90,17 +90,17 @@ impl CandleState {
         let start = self.candle_start(t.ts_ms);
 
         let mut finalized = None;
-        if let Some(cur) = self.cur {
-            if cur.start_ms != start {
-                finalized = Some(CandleUpdate {
-                    candle: cur,
-                    reason: CandleEmitReason::Finalized,
-                });
-                self.cur = None;
-                // Each candle is a new aggregation window; reset epsilon tracking.
-                self.last_emit_high = f64::NAN;
-                self.last_emit_close = f64::NAN;
-            }
+        if let Some(cur) = self.cur
+            && cur.start_ms != start
+        {
+            finalized = Some(CandleUpdate {
+                candle: cur,
+                reason: CandleEmitReason::Finalized,
+            });
+            self.cur = None;
+            // Each candle is a new aggregation window; reset epsilon tracking.
+            self.last_emit_high = f64::NAN;
+            self.last_emit_close = f64::NAN;
         }
 
         let mut c = self.cur.unwrap_or(Candle {

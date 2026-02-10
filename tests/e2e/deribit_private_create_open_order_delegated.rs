@@ -9,14 +9,13 @@ use kameo::Actor;
 use shared_rate_limiter::Config;
 use shared_ws::client::accept_async;
 use shared_ws::ws::{WsMessage, into_ws_message};
-use sonic_rs::JsonValueTrait;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tracing::debug;
 
 use crate::mock_deribit_wss::{
-    DeribitServerEvent, deribit_auth_ok, deribit_buy_ok, parse_jsonrpc_method_and_id,
-    spawn_deribit_mock_wss,
+    DeribitServerEvent, JsonRpcMethod, deribit_auth_ok, deribit_buy_ok,
+    parse_jsonrpc_method_and_id, spawn_deribit_mock_wss,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -63,25 +62,19 @@ async fn spawn_deribit_private_server_mode(
                         WsMessage::Close(_) => break,
                     };
 
-                    let _ = tx.send(bytes.clone());
-
-                    let method = sonic_rs::get(bytes.as_ref(), &["method"])
-                        .ok()
-                        .and_then(|v| v.as_str().map(|s| s.to_string()))
-                        .unwrap_or_default();
-                    let id = sonic_rs::get(bytes.as_ref(), &["id"])
-                        .ok()
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0u64);
+                    let (method, id) = parse_jsonrpc_method_and_id(bytes.as_ref());
+                    let id = id.unwrap_or(0u64);
 
                     if let Ok(text) = std::str::from_utf8(bytes.as_ref()) {
-                        debug!(direction="client->server", method=%method, id=%id, text=%text, "deribit private mock: request");
+                        debug!(direction="client->server", method=?method, id=%id, text=%text, "deribit private mock: request");
                     } else {
-                        debug!(direction="client->server", method=%method, id=%id, bytes=bytes.len(), "deribit private mock: request (binary)");
+                        debug!(direction="client->server", method=?method, id=%id, bytes=bytes.len(), "deribit private mock: request (binary)");
                     }
 
-                    match method.as_str() {
-                        "public/auth" => {
+                    let _ = tx.send(bytes);
+
+                    match method {
+                        Some(JsonRpcMethod::PublicAuth) => {
                             authed = true;
                             let resp = format!(
                                 "{{\"jsonrpc\":\"2.0\",\"id\":{},\"result\":{{\"access_token\":\"t\"}}}}",
@@ -90,7 +83,7 @@ async fn spawn_deribit_private_server_mode(
                             debug!(direction="server->client", method="public/auth", id=%id, text=%resp, "deribit private mock: response");
                             let _ = ws.send(into_ws_message(resp)).await;
                         }
-                        "private/buy" => {
+                        Some(JsonRpcMethod::PrivateBuy) => {
                             if !authed {
                                 let resp = format!(
                                     "{{\"jsonrpc\":\"2.0\",\"id\":{},\"error\":{{\"code\":13009,\"message\":\"unauthorized\"}}}}",
@@ -129,7 +122,7 @@ async fn spawn_deribit_private_server_mode(
                                 "{{\"jsonrpc\":\"2.0\",\"id\":{},\"result\":{{\"ok\":true}}}}",
                                 id
                             );
-                            debug!(direction="server->client", method=%method, id=%id, text=%resp, "deribit private mock: response");
+                            debug!(direction="server->client", method=?method, id=%id, text=%resp, "deribit private mock: response");
                             let _ = ws.send(into_ws_message(resp)).await;
                         }
                     }
@@ -194,17 +187,11 @@ async fn deribit_create_open_order_over_ws_uses_delegated_confirmed_flow() {
         .unwrap()
         .unwrap();
 
-    let m1 = sonic_rs::get(first.as_ref(), &["method"])
-        .ok()
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-        .unwrap_or_default();
-    let m2 = sonic_rs::get(second.as_ref(), &["method"])
-        .ok()
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-        .unwrap_or_default();
+    let (m1, _) = parse_jsonrpc_method_and_id(first.as_ref());
+    let (m2, _) = parse_jsonrpc_method_and_id(second.as_ref());
 
-    assert_eq!(m1, "public/auth");
-    assert_eq!(m2, "private/buy");
+    assert_eq!(m1, Some(JsonRpcMethod::PublicAuth));
+    assert_eq!(m2, Some(JsonRpcMethod::PrivateBuy));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -291,17 +278,11 @@ async fn deribit_create_open_order_surfaces_endpoint_rejection() {
         .unwrap()
         .unwrap();
 
-    let m1 = sonic_rs::get(first.as_ref(), &["method"])
-        .ok()
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-        .unwrap_or_default();
-    let m2 = sonic_rs::get(second.as_ref(), &["method"])
-        .ok()
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-        .unwrap_or_default();
+    let (m1, _) = parse_jsonrpc_method_and_id(first.as_ref());
+    let (m2, _) = parse_jsonrpc_method_and_id(second.as_ref());
 
-    assert_eq!(m1, "public/auth");
-    assert_eq!(m2, "private/buy");
+    assert_eq!(m1, Some(JsonRpcMethod::PublicAuth));
+    assert_eq!(m2, Some(JsonRpcMethod::PrivateBuy));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -343,17 +324,11 @@ async fn deribit_create_open_order_times_out_unconfirmed_when_server_never_repli
         .unwrap()
         .unwrap();
 
-    let m1 = sonic_rs::get(first.as_ref(), &["method"])
-        .ok()
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-        .unwrap_or_default();
-    let m2 = sonic_rs::get(second.as_ref(), &["method"])
-        .ok()
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-        .unwrap_or_default();
+    let (m1, _) = parse_jsonrpc_method_and_id(first.as_ref());
+    let (m2, _) = parse_jsonrpc_method_and_id(second.as_ref());
 
-    assert_eq!(m1, "public/auth");
-    assert_eq!(m2, "private/buy");
+    assert_eq!(m1, Some(JsonRpcMethod::PublicAuth));
+    assert_eq!(m2, Some(JsonRpcMethod::PrivateBuy));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -363,17 +338,20 @@ async fn deribit_create_open_order_times_out_unconfirmed_when_auth_never_replies
     let (handle, mut events) = spawn_deribit_mock_wss().await;
 
     // Driver: observe auth request but never reply.
-    let (seen_tx, mut seen_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let (seen_tx, mut seen_rx) = tokio::sync::mpsc::unbounded_channel::<JsonRpcMethod>();
     tokio::spawn(async move {
         while let Some(ev) = events.recv().await {
-            match ev {
-                DeribitServerEvent::InboundText { text } => {
-                    let (method, _id) = parse_jsonrpc_method_and_id(&text);
-                    if let Some(method) = method {
-                        let _ = seen_tx.send(method);
+            if let DeribitServerEvent::InboundText { text } = ev {
+                let (method, _id) = parse_jsonrpc_method_and_id(text.as_ref());
+                match method {
+                    Some(JsonRpcMethod::PublicAuth) => {
+                        let _ = seen_tx.send(JsonRpcMethod::PublicAuth);
                     }
+                    Some(JsonRpcMethod::PrivateBuy) => {
+                        let _ = seen_tx.send(JsonRpcMethod::PrivateBuy);
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
     });
@@ -407,7 +385,7 @@ async fn deribit_create_open_order_times_out_unconfirmed_when_auth_never_replies
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(first, "public/auth");
+    assert_eq!(first, JsonRpcMethod::PublicAuth);
 
     assert!(
         tokio::time::timeout(Duration::from_millis(250), seen_rx.recv())
@@ -427,31 +405,27 @@ async fn deribit_create_open_order_times_out_unconfirmed_when_buy_reply_is_delay
 
     // Driver: reply to auth immediately, but delay buy reply beyond the client's confirm deadline.
     let h = handle.clone();
-    let (seen_tx, mut seen_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let (seen_tx, mut seen_rx) = tokio::sync::mpsc::unbounded_channel::<JsonRpcMethod>();
     tokio::spawn(async move {
         while let Some(ev) = events.recv().await {
-            match ev {
-                DeribitServerEvent::InboundText { text } => {
-                    let (method, id) = parse_jsonrpc_method_and_id(&text);
-                    if let Some(method) = method {
-                        let _ = seen_tx.send(method.clone());
-                        match method.as_str() {
-                            "public/auth" => {
-                                if let Some(id) = id {
-                                    h.send_text(deribit_auth_ok(id));
-                                }
-                            }
-                            "private/buy" => {
-                                if let Some(id) = id {
-                                    tokio::time::sleep(deadline * 2).await;
-                                    h.send_text(deribit_buy_ok(id, 1_700_000_000_000));
-                                }
-                            }
-                            _ => {}
+            if let DeribitServerEvent::InboundText { text } = ev {
+                let (method, id) = parse_jsonrpc_method_and_id(text.as_ref());
+                match method {
+                    Some(JsonRpcMethod::PublicAuth) => {
+                        let _ = seen_tx.send(JsonRpcMethod::PublicAuth);
+                        if let Some(id) = id {
+                            h.send_text(deribit_auth_ok(id));
                         }
                     }
+                    Some(JsonRpcMethod::PrivateBuy) => {
+                        let _ = seen_tx.send(JsonRpcMethod::PrivateBuy);
+                        if let Some(id) = id {
+                            tokio::time::sleep(deadline * 2).await;
+                            h.send_text(deribit_buy_ok(id, 1_700_000_000_000));
+                        }
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
     });
@@ -489,6 +463,6 @@ async fn deribit_create_open_order_times_out_unconfirmed_when_buy_reply_is_delay
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(m1, "public/auth");
-    assert_eq!(m2, "private/buy");
+    assert_eq!(m1, JsonRpcMethod::PublicAuth);
+    assert_eq!(m2, JsonRpcMethod::PrivateBuy);
 }

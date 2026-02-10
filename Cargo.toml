@@ -1,16 +1,21 @@
 [package]
 name = "examples-ws"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/moofone/examples-ws"
+readme = "README.md"
+description = "Exchange-specific examples and adapters built on top of shared-ws (Bybit, Deribit)."
 
 [dependencies]
-shared-ws = { git = "https://github.com/moofone/shared-ws" }
-shared-rate_limiter = { git = "https://github.com/moofone/shared-rate_limiter" }
+shared-ws = { git = "https://github.com/moofone/shared-ws", version = "=0.1.0", rev = "47128c001e0086f7f304b4216c61293d7bb53eb8" }
+shared-rate_limiter = { git = "https://github.com/moofone/shared-rate_limiter", version = "=0.1.0", rev = "a58a8a3f93d788c0ecb34ff68b723dd85bc542b2" }
 bytes = "1.6"
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
-# Pin to the same rev as `shared-ws` to avoid duplicate kameo sources in Cargo.lock
-# (which breaks trait coherence when types cross the crate boundary).
-kameo = { git = "https://github.com/moofone/kameo", rev = "ee74f3e4e21efe4f456e6eeb1f7e68cb24322186", features = ["remote"] }
+# Keep the `kameo` source consistent with `shared-ws` to avoid duplicate `kameo` crates in
+# `Cargo.lock` (trait coherence breaks when types cross the crate boundary).
+kameo = { git = "https://github.com/moofone/kameo", version = "=0.19.2", rev = "ee74f3e4e21efe4f456e6eeb1f7e68cb24322186", features = ["remote"] }
 lexical-core = "0.8"
 memchr = "2"
 serde = { version = "1", features = ["derive"] }

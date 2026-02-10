@@ -106,7 +106,7 @@ impl WsEndpointHandler for DeribitJsonRpcMatcher {
                 .and_then(|v| v.as_i64());
             let message = sonic_rs::get(data, &["error", "message"])
                 .ok()
-                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .and_then(|v| v.as_str().map(ToOwned::to_owned))
                 .unwrap_or_else(|| "deribit jsonrpc error".to_string());
 
             let mut msg = message;
@@ -123,16 +123,15 @@ impl WsEndpointHandler for DeribitJsonRpcMatcher {
 
         if sonic_rs::get(data, &["result"]).is_ok() {
             // If the response looks like an order placement response, validate the order state.
-            if let Ok(state) = sonic_rs::get(data, &["result", "order", "order_state"]) {
-                if let Some(state) = state.as_str() {
-                    if state != "open" {
-                        return Some(WsRequestMatch {
-                            request_id,
-                            result: Err(format!("deribit order_state is not open: {state}")),
-                            rate_limit_feedback: None,
-                        });
-                    }
-                }
+            if let Ok(state) = sonic_rs::get(data, &["result", "order", "order_state"])
+                && let Some(state) = state.as_str()
+                && state != "open"
+            {
+                return Some(WsRequestMatch {
+                    request_id,
+                    result: Err(format!("deribit order_state is not open: {state}")),
+                    rate_limit_feedback: None,
+                });
             }
 
             return Some(WsRequestMatch {

@@ -99,6 +99,7 @@ where
     d.deserialize_any(F64Visitor)
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, Deserialize)]
 struct Trade {
     #[serde(rename = "T", alias = "tradeTime")]

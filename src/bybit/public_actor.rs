@@ -190,22 +190,21 @@ impl BybitPublicActorArgs {
 
 pub struct BybitPublicActor {
     args: BybitPublicActorArgs,
-    ws: Option<
-        ActorRef<
-            WebSocketActor<
-                ForwardingHandler,
-                shared_ws::ws::ExponentialBackoffReconnect,
-                BybitJsonPingPong,
-                ForwardAllIngress<BybitEvent>,
-                TungsteniteTransport,
-            >,
-        >,
-    >,
+    ws: Option<BybitWsActorRef>,
     metrics: Arc<ForwardMetrics>,
     sink_tx: watch::Sender<Option<mpsc::Sender<BybitEvent>>>,
     forward_task: Option<tokio::task::JoinHandle<()>>,
     subscribed: HashSet<String>,
 }
+
+type BybitWsActor = WebSocketActor<
+    ForwardingHandler,
+    shared_ws::ws::ExponentialBackoffReconnect,
+    BybitJsonPingPong,
+    ForwardAllIngress<BybitEvent>,
+    TungsteniteTransport,
+>;
+type BybitWsActorRef = ActorRef<BybitWsActor>;
 
 impl BybitPublicActor {
     pub fn new(args: BybitPublicActorArgs) -> Self {

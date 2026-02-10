@@ -9,14 +9,13 @@ use kameo::Actor;
 use shared_ws::ws::{
     ProtocolPingPong, WebSocketActor, WebSocketActorArgs, WebSocketBufferConfig, WebSocketEvent,
     WsConfirmMode, WsDelegatedRequest, WsDisconnectAction, WsDisconnectCause, WsEndpointHandler,
-    WsErrorAction, WsParseOutcome, WsReconnectStrategy, WsRequestMatch,
-    into_ws_message,
+    WsErrorAction, WsParseOutcome, WsReconnectStrategy, WsRequestMatch, into_ws_message,
 };
 use tokio::sync::mpsc;
 use tracing::debug;
 
 use super::mock_deribit_wss::{
-    DeribitServerEvent, deribit_auth_ok, deribit_buy_ok, deribit_subscribe_ack,
+    DeribitServerEvent, JsonRpcMethod, deribit_auth_ok, deribit_buy_ok, deribit_subscribe_ack,
     deribit_ticker_notification, parse_jsonrpc_method_and_id, spawn_deribit_mock_wss,
 };
 
@@ -155,17 +154,20 @@ async fn deribit_wss_subscribe_then_place_order_confirmed() {
         match tokio::time::timeout(Duration::from_secs(2), server_rx.recv()).await {
             Ok(Some(DeribitServerEvent::Connected { .. })) => {}
             Ok(Some(DeribitServerEvent::InboundText { text })) => {
-                let (method, id) = parse_jsonrpc_method_and_id(&text);
-                match method.as_deref() {
-                    Some("public/auth") => {
+                let (method, id) = parse_jsonrpc_method_and_id(text.as_ref());
+                match method {
+                    Some(JsonRpcMethod::PublicAuth) => {
                         let id = id.expect("auth request should include id");
                         debug!(auth_id = id, "replying to deribit auth");
                         server.send_text(deribit_auth_ok(id));
                         saw_auth = true;
                     }
-                    Some("public/subscribe") => {
+                    Some(JsonRpcMethod::PublicSubscribe) => {
                         let id = id.expect("subscribe request should include id");
-                        assert!(text.contains(channel), "subscribe should include channel");
+                        assert!(
+                            text.as_str().contains(channel),
+                            "subscribe should include channel"
+                        );
                         debug!(
                             subscribe_id = id,
                             "acking deribit subscribe + sending one notification"
@@ -228,8 +230,8 @@ async fn deribit_wss_subscribe_then_place_order_confirmed() {
     loop {
         match tokio::time::timeout(Duration::from_secs(2), server_rx.recv()).await {
             Ok(Some(DeribitServerEvent::InboundText { text })) => {
-                let (method, id) = parse_jsonrpc_method_and_id(&text);
-                if method.as_deref() == Some("private/buy") {
+                let (method, id) = parse_jsonrpc_method_and_id(text.as_ref());
+                if method == Some(JsonRpcMethod::PrivateBuy) {
                     let id = id.expect("buy request should include id");
                     assert_eq!(id, request_id);
                     debug!(order_id = id, "replying to deribit private/buy");
