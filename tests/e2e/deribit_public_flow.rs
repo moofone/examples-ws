@@ -8,7 +8,6 @@ use examples_ws::endpoints::deribit::{
     DeribitChannel, DeribitEvent, DeribitPublicHandler, DeribitSubOp, DeribitSubscriptionManager,
     DeribitSubscriptionRequest,
 };
-use kameo::Actor;
 use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::{
     ProtocolPingPong, WebSocketActor, WebSocketActorArgs, WebSocketBufferConfig, WebSocketEvent,

@@ -5,7 +5,6 @@ use examples_ws::endpoints::deribit::{
     DeribitSubscriptionManager,
 };
 use examples_ws::endpoints::deribit_private::DeribitJsonRpcMatcher;
-use kameo::Actor;
 use shared_ws::ws::{
     ProtocolPingPong, WebSocketActor, WebSocketActorArgs, WebSocketBufferConfig, WebSocketEvent,
     WsConfirmMode, WsDelegatedRequest, WsDisconnectAction, WsDisconnectCause, WsEndpointHandler,

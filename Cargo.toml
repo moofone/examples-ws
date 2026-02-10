@@ -1,6 +1,6 @@
 [package]
 name = "examples-ws"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
@@ -9,13 +9,13 @@ readme = "README.md"
 description = "Exchange-specific examples and adapters built on top of shared-ws (Bybit, Deribit)."
 
 [dependencies]
-shared-ws = { git = "https://github.com/moofone/shared-ws", version = "=0.1.0", rev = "47128c001e0086f7f304b4216c61293d7bb53eb8" }
+shared-ws = { git = "https://github.com/moofone/shared-ws", version = "=0.1.2", rev = "587a44c3e0b7e4a1ae67201b232fa4ceeaa6a960" }
 shared-rate_limiter = { git = "https://github.com/moofone/shared-rate_limiter", version = "=0.1.0", rev = "a58a8a3f93d788c0ecb34ff68b723dd85bc542b2" }
 bytes = "1.6"
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 # Keep the `kameo` source consistent with `shared-ws` to avoid duplicate `kameo` crates in
 # `Cargo.lock` (trait coherence breaks when types cross the crate boundary).
-kameo = { git = "https://github.com/moofone/kameo", version = "=0.19.2", rev = "ee74f3e4e21efe4f456e6eeb1f7e68cb24322186", features = ["remote"] }
+kameo = { git = "https://github.com/moofone/kameo.git", branch = "main", version = "=0.19.2", features = ["remote"] }
 lexical-core = "0.8"
 memchr = "2"
 serde = { version = "1", features = ["derive"] }
