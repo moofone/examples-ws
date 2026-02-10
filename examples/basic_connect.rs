@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use kameo::Actor;
 use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::{
     GetConnectionStats, ProtocolPingPong, WebSocketActor, WebSocketActorArgs,

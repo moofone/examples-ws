@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use bytes::Bytes;
-use kameo::Actor;
 use sonic_rs::JsonContainerTrait;
 use sonic_rs::JsonValueTrait;
 

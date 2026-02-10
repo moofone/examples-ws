@@ -7,7 +7,6 @@ use std::time::Duration;
 use examples_ws::endpoints::deribit::{
     DeribitChannel, DeribitEvent, DeribitPublicHandler, DeribitSubscriptionManager,
 };
-use kameo::Actor;
 use shared_ws::ws::{
     ProtocolPingPong, WebSocketActor, WebSocketActorArgs, WebSocketBufferConfig, WebSocketEvent,
     WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction, WsParseOutcome,

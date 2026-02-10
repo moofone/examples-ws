@@ -2,7 +2,6 @@ use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use kameo::Actor;
 use memchr::memmem;
 use shared_ws::client::accept_async;
 use shared_ws::transport::tungstenite::TungsteniteTransport;

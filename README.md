@@ -10,9 +10,9 @@ This crate follows SemVer. See `CHANGELOG.md` for notable changes per release.
 
 ## Moofone Dependency Versions
 
-As of `examples-ws` `0.1.1`, this repo is pinned to the following versions of the moofone crates:
+As of `examples-ws` `0.1.2`, this repo is pinned to the following versions of the moofone crates:
 
-- `shared-ws` `0.1.0`
+- `shared-ws` `0.1.2`
 - `shared-rate_limiter` `0.1.0`
 - `kameo` `0.19.2` (moofone fork)
 - `kameo_remote` `0.1.0` (transitive via `kameo`'s `remote` feature)
