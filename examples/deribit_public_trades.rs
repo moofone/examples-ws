@@ -10,9 +10,7 @@ use shared_ws::ws::{
     ForwardAllIngress, WebSocketBufferConfig, WsDisconnectAction, WsDisconnectCause,
     WsEndpointHandler, WsErrorAction, WsParseOutcome,
 };
-use shared_ws::ws::{
-    ProtocolPingPong, WebSocketActor, WebSocketActorArgs, WebSocketEvent, WsTlsConfig,
-};
+use shared_ws::ws::{ProtocolPingPong, WebSocketActor, WebSocketActorArgs, WebSocketEvent};
 
 use examples_ws::deribit::reconnect::DeribitReconnect;
 use examples_ws::endpoints::deribit::{
@@ -94,6 +92,7 @@ impl WsEndpointHandler for PrintingHandler {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct Trade {
     instrument: String,
@@ -217,7 +216,6 @@ async fn main() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url,
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: DeribitReconnect::default(),
         handler,

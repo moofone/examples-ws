@@ -7,7 +7,7 @@ use shared_ws::ws::{
     GetConnectionStats, GetConnectionStatus, ProtocolPingPong, WebSocketActor, WebSocketActorArgs,
     WebSocketBufferConfig, WebSocketEvent, WsConnectionStatus, WsEndpointHandler, WsErrorAction,
     WsMessageAction, WsParseOutcome, WsReconnectStrategy, WsRequestMatch, WsSubscriptionAction,
-    WsSubscriptionManager, WsSubscriptionStatus, WsTlsConfig,
+    WsSubscriptionManager, WsSubscriptionStatus,
 };
 
 use crate::support::ws_mock::{WsMockCmd, WsMockConfig, WsMockFrameKind, WsMockServer};
@@ -134,7 +134,6 @@ async fn ping_from_server_is_replied_with_pong_and_health_stats_are_strict() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url: format!("ws://{addr}"),
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: NoReconnect,
         handler: NoopHandler::default(),
@@ -201,7 +200,6 @@ async fn actor_sends_unsolicited_ping_records_pong_rtt_histogram_and_updates_hea
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url: format!("ws://{addr}"),
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: NoReconnect,
         handler: NoopHandler::default(),

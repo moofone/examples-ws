@@ -11,13 +11,13 @@ use kameo::Actor;
 use shared_ws::ws::{
     ProtocolPingPong, WebSocketActor, WebSocketActorArgs, WebSocketBufferConfig, WebSocketEvent,
     WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction, WsParseOutcome,
-    WsReconnectStrategy, WsTlsConfig,
+    WsReconnectStrategy,
 };
 use tokio::sync::mpsc;
 use tracing::debug;
 
 use super::mock_deribit_wss::{
-    DeribitServerEvent, deribit_subscribe_ack, deribit_ticker_notification,
+    DeribitServerEvent, JsonRpcMethod, deribit_subscribe_ack, deribit_ticker_notification,
     parse_jsonrpc_method_and_id, spawn_deribit_mock_wss,
 };
 
@@ -117,7 +117,6 @@ async fn deribit_wss_connects_subscribes_and_receives_stream_data() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url: server.url(),
-        tls: WsTlsConfig::default(),
         transport: server.client_transport(),
         reconnect_strategy: FastReconnect,
         handler,
@@ -140,10 +139,13 @@ async fn deribit_wss_connects_subscribes_and_receives_stream_data() {
         match tokio::time::timeout(Duration::from_secs(2), server_rx.recv()).await {
             Ok(Some(DeribitServerEvent::Connected { .. })) => {}
             Ok(Some(DeribitServerEvent::InboundText { text })) => {
-                let (method, id) = parse_jsonrpc_method_and_id(&text);
-                if method.as_deref() == Some("public/subscribe") {
+                let (method, id) = parse_jsonrpc_method_and_id(text.as_ref());
+                if method == Some(JsonRpcMethod::PublicSubscribe) {
                     let id = id.expect("subscribe request should include id");
-                    assert!(text.contains(channel), "subscribe should include channel");
+                    assert!(
+                        text.as_str().contains(channel),
+                        "subscribe should include channel"
+                    );
                     debug!(
                         subscribe_id = id,
                         "sending deribit subscribe ack + notifications"

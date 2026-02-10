@@ -10,9 +10,7 @@ use shared_ws::ws::{
     ForwardAllIngress, WebSocketBufferConfig, WsDisconnectAction, WsDisconnectCause,
     WsEndpointHandler, WsErrorAction, WsParseOutcome,
 };
-use shared_ws::ws::{
-    WebSocketActor, WebSocketActorArgs, WebSocketEvent, WsReconnectStrategy, WsTlsConfig,
-};
+use shared_ws::ws::{WebSocketActor, WebSocketActorArgs, WebSocketEvent, WsReconnectStrategy};
 
 use examples_ws::bybit::ping::BybitJsonPingPong;
 use examples_ws::endpoints::bybit::{
@@ -127,6 +125,7 @@ impl WsEndpointHandler for PrintingHandler {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct Trade {
     symbol: String,
@@ -252,7 +251,6 @@ async fn main() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url,
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: ExponentialReconnect::new(
             Duration::from_secs(1),

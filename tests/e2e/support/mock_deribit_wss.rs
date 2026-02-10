@@ -9,13 +9,22 @@ use rcgen::CertifiedKey;
 use sonic_rs::JsonValueTrait;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio_tungstenite::tungstenite::Utf8Bytes;
 use tracing::debug;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JsonRpcMethod {
+    PublicAuth,
+    PublicSubscribe,
+    PrivateBuy,
+    Subscription,
+}
 
 /// Inbound observations from the mock server (client -> server).
 #[derive(Debug)]
 pub enum DeribitServerEvent {
     Connected { peer: SocketAddr },
-    InboundText { text: String },
+    InboundText { text: Utf8Bytes },
     InboundBinary { bytes: Bytes },
     Disconnected,
 }
@@ -144,11 +153,11 @@ pub async fn spawn_deribit_mock_wss() -> (
                     match msg {
                         tokio_tungstenite::tungstenite::Message::Text(txt) => {
                             debug!(direction = "client->server", text = %txt, "deribit mock wss: text");
-                            let _ = event_tx.send(DeribitServerEvent::InboundText { text: txt.to_string() });
+                            let _ = event_tx.send(DeribitServerEvent::InboundText { text: txt });
                         }
                         tokio_tungstenite::tungstenite::Message::Binary(bin) => {
                             debug!(direction = "client->server", bytes = bin.len(), "deribit mock wss: binary");
-                            let _ = event_tx.send(DeribitServerEvent::InboundBinary { bytes: Bytes::from(bin) });
+                            let _ = event_tx.send(DeribitServerEvent::InboundBinary { bytes: bin });
                         }
                         tokio_tungstenite::tungstenite::Message::Ping(_) |
                         tokio_tungstenite::tungstenite::Message::Pong(_) => {}
@@ -182,11 +191,16 @@ pub async fn spawn_deribit_mock_wss() -> (
     )
 }
 
-pub fn parse_jsonrpc_method_and_id(text: &str) -> (Option<String>, Option<u64>) {
-    let bytes = text.as_bytes();
+pub fn parse_jsonrpc_method_and_id(bytes: &[u8]) -> (Option<JsonRpcMethod>, Option<u64>) {
     let method = sonic_rs::get(bytes, &["method"])
         .ok()
-        .and_then(|v| v.as_str().map(|s| s.to_string()));
+        .and_then(|v| match v.as_raw_str() {
+            "\"public/auth\"" => Some(JsonRpcMethod::PublicAuth),
+            "\"public/subscribe\"" => Some(JsonRpcMethod::PublicSubscribe),
+            "\"private/buy\"" => Some(JsonRpcMethod::PrivateBuy),
+            "\"subscription\"" => Some(JsonRpcMethod::Subscription),
+            _ => None,
+        });
     let id = sonic_rs::get(bytes, &["id"]).ok().and_then(|v| v.as_u64());
     (method, id)
 }

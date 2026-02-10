@@ -13,7 +13,7 @@ use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::{
     ProtocolPingPong, WebSocketActor, WebSocketActorArgs, WebSocketBufferConfig, WebSocketEvent,
     WsDisconnectAction, WsDisconnectCause, WsEndpointHandler, WsErrorAction, WsParseOutcome,
-    WsReconnectStrategy, WsSubscriptionAction, WsTlsConfig,
+    WsReconnectStrategy, WsSubscriptionAction,
 };
 use tokio::sync::mpsc;
 
@@ -120,7 +120,6 @@ async fn deribit_sends_subscribe_on_connect_and_parses_subscription_notification
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url: format!("ws://{}", addr),
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: FastReconnect,
         handler,
@@ -195,7 +194,6 @@ async fn deribit_parses_platform_state_subscription_notification() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url: format!("ws://{}", addr),
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: FastReconnect,
         handler,
@@ -259,7 +257,6 @@ async fn deribit_dynamic_subscription_update_emits_subscribe_request() {
 
     let actor = WebSocketActor::spawn(WebSocketActorArgs {
         url: format!("ws://{}", addr),
-        tls: WsTlsConfig::default(),
         transport: TungsteniteTransport::default(),
         reconnect_strategy: FastReconnect,
         handler,

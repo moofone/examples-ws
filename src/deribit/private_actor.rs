@@ -15,7 +15,7 @@ use shared_ws::transport::tungstenite::TungsteniteTransport;
 use shared_ws::ws::{
     ForwardAllIngress, GetConnectionStatus, ProtocolPingPong, WebSocketActor, WebSocketActorArgs,
     WebSocketBufferConfig, WebSocketEvent, WsConfirmMode, WsConnectionStatus, WsDelegatedError,
-    WsDelegatedRequest, WsTlsConfig, into_ws_message,
+    WsDelegatedRequest, into_ws_message,
 };
 use tracing::debug;
 
@@ -32,7 +32,6 @@ pub struct DeribitAuthConfig {
 #[derive(Clone)]
 pub struct DeribitPrivateActorArgs {
     pub url: String,
-    pub tls: WsTlsConfig,
     /// WebSocket transport implementation/config (used for TLS connector customization in tests).
     pub transport: TungsteniteTransport,
     pub stale_threshold: Duration,
@@ -57,7 +56,6 @@ impl DeribitPrivateActorArgs {
     pub fn test_defaults(url: String) -> Self {
         Self {
             url,
-            tls: WsTlsConfig::default(),
             transport: TungsteniteTransport::default(),
             stale_threshold: Duration::from_secs(30),
             enable_ping: false,
@@ -327,7 +325,6 @@ impl Actor for DeribitPrivateActor {
         let ping = ProtocolPingPong::new(args.ping_interval, args.ping_timeout);
         let ws = WebSocketActor::spawn(WebSocketActorArgs {
             url: args.url.clone(),
-            tls: args.tls,
             transport: args.transport.clone(),
             reconnect_strategy: args.reconnect.clone(),
             handler: DeribitJsonRpcMatcher::new(),
